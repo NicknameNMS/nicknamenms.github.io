@@ -68,7 +68,8 @@ Color meaning is consistent across diagrams: **teal = channel / signal A, amber 
 - **Expandables:** `<details>` with a square `+`/`−` indicator box (teal outline, filled when open).
 - **Schematics:** inline SVG with scope-probe "screens" (`.scope`) showing the waveform at each node, animated dashed current flow (`.cur`/`.lcur`), and hop-overs where wires cross.
 - Glows come from `box-shadow` / `drop-shadow` in the accent color. Keep them subtle.
-- **Footer mascot:** an **original** line-art tracked robot (treads, articulated arm, waveform-grin face, blinking amber antenna LED) that drives across the footer. Don't make it resemble any commercial robot (e.g., Anki Vector).
+- **Footer mascot:** an **original** line-art tracked robot (treads, articulated arm, waveform-grin face, blinking amber antenna LED) that drives across the footer once each time its hidden footer button is pressed. Don't make it resemble any commercial robot (e.g., Anki Vector).
+- **Footer easter eggs:** two nearly invisible buttons in the footer's bottom-left corner. The circle drops in the Lab Mech, and the Lab Runner runs in and fights it. The square sends the bench robot across once.
 
 ### Responsive and motion
 

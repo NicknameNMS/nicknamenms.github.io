@@ -456,8 +456,10 @@ section{padding:88px 0 0}
 /* ---------- bench bot driving along the footer ---------- */
 .botlane{position:relative;height:120px;overflow:hidden;margin-top:56px}
 .botlane::after{content:"";position:absolute;left:0;right:0;bottom:7px;border-top:1px dashed var(--line)}
-.bot{position:absolute;bottom:0;left:-170px;width:150px;animation:drive 24s linear infinite}
-@keyframes drive{0%{left:-170px}78%{left:100%}100%{left:100%}}
+.bot{position:absolute;bottom:0;left:-170px;width:150px}
+.bot.go{animation:drive 18.7s linear 1}   /* one trip per press of the footer button (see benchBot() script) */
+.bot:not(.go) *{animation-play-state:paused}
+@keyframes drive{from{left:-170px}to{left:100%}}
 .bot svg{display:block;overflow:visible}
 .bl{fill:none;stroke:#9DB4D8;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .bl.thin{stroke-width:1.1}
@@ -490,11 +492,11 @@ section{padding:88px 0 0}
 .bot-tread{fill:none;stroke:#9DB4D8;stroke-width:3;stroke-dasharray:2.5 4;animation:tread .45s linear infinite}
 @keyframes tread{to{stroke-dashoffset:-13}}
 @media (prefers-reduced-motion:reduce){
-  .bot{animation:none;left:calc(50% - 62px)}
+  .bot.go{animation:none;left:calc(50% - 62px)}
   .bot-wheel,.bot-bob,.bot-arm,.bot-tread,.bot-trace,.bot-led,.bot-eyes{animation:none}
 }
 /* Lab Runner: on-demand character that sprints past the bench bot (see labRunner() script) */
-.lab-runner{position:absolute;left:0;bottom:7px;width:100px;height:107px;visibility:hidden;pointer-events:none;will-change:transform}
+.lab-runner{position:absolute;left:0;bottom:7px;width:100px;height:107px;visibility:hidden;pointer-events:none;will-change:transform;transform-origin:51% 66%}
 .lab-runner.go{visibility:visible}
 .lab-runner svg{display:block;width:100%;height:100%;overflow:visible}
 .lab-runner .lr-glow-o{filter:drop-shadow(0 0 3px rgba(255,154,46,.95))}
@@ -504,8 +506,8 @@ section{padding:88px 0 0}
 footer{position:relative}
 .egg-btn{position:absolute;left:8px;bottom:8px;width:28px;height:28px;padding:0;border:0;background:none;cursor:pointer;opacity:.18;transition:opacity .3s}
 .egg-btn::before{content:"";display:block;width:7px;height:7px;margin:auto;border:1px solid var(--muted);border-radius:50%}
-.egg-btn.lm-btn{left:34px}
-.egg-btn.lm-btn::before{border-radius:1px}
+.egg-btn.bot-btn{left:34px}
+.egg-btn.bot-btn::before{border-radius:1px}
 .egg-btn:focus-visible{opacity:.9}
 .egg-btn:focus-visible::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}
 @media (hover:hover){.egg-btn:hover{opacity:.9}.egg-btn:hover::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}}
@@ -1333,14 +1335,13 @@ dialog .close:hover{border-color:var(--phosphor)}
       <circle cx="46" cy="98" r="3.5" class="bl thin"/><circle cx="58" cy="98" r="3.5" class="bl thin"/><circle cx="70" cy="98" r="3.5" class="bl thin"/>
     </svg>
   </div>
-  <div class="lab-runner"></div>
 </div>
 <footer>
-  <button type="button" class="egg-btn lr-btn" aria-label="Send the lab runner past the robot" title="?"></button>
   <button type="button" class="egg-btn lm-btn" aria-label="Drop in the lab mech" title="?"></button>
+  <button type="button" class="egg-btn bot-btn" aria-label="Send the bench robot across" title="?"></button>
   <div class="wrap">© 2026 Nicholas Tipton · <span class="mono">KD9YXB</span> · 73</div>
 </footer>
-<div class="lab-mech-layer" aria-hidden="true"><div class="lab-mech"></div></div>
+<div class="lab-mech-layer" aria-hidden="true"><div class="lab-mech"></div><div class="lab-runner"></div></div>
 <canvas class="lab-mech-fx" aria-hidden="true"></canvas>
 
 <template id="bench-svg">
@@ -1861,13 +1862,27 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   else start();
 })();
 
-/* ---------- Lab Runner: footer button sends a runner sprinting past the bench bot ---------- */
-/* Character art + run cycle from LAB_RUNNER.md; adapted to run once per click inside .botlane. */
+/* ---------- Bench bot: footer button sends the robot across the lane once ---------- */
+(function benchBot() {
+  var bot = document.querySelector('.bot'), btn = document.querySelector('.bot-btn');
+  if (!bot || !btn) return;
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  bot.addEventListener('animationend', function (e) { if (e.target === bot) bot.classList.remove('go'); });
+  btn.addEventListener('click', function () {
+    if (still) { bot.classList.toggle('go'); return; }   // reduced motion: show or hide a parked robot
+    if (!bot.classList.contains('go')) bot.classList.add('go');   // ignore presses mid-trip
+  });
+})();
+
+/* ---------- Lab Runner: sprints in to fight the Lab Mech whenever it's dropped in ---------- */
+/* Character art, run cycle, and fight from the lab-fight demo. Adapted: hidden until the mech is
+   spawned (window.labRunnerGo), runs once, and stands on the .botlane floor line like the mech. */
 (function labRunner() {
+  var FIGHT_ENEMIES = true;     // run out and attack any enemy registered in window.labEnemies
   var root = document.querySelector('.lab-runner');
   var lane = document.querySelector('.botlane');
-  var btn = document.querySelector('.lr-btn');
-  if (!root || !lane || !btn) return;
+  var layer = document.querySelector('.lab-mech-layer');
+  if (!root || !lane || !layer) return;
 
   // ---- palette: site teal + orange, with leather and cloth ----
   var C = {
@@ -2012,6 +2027,112 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   })();
 
   var phase = 0, t = 0, x = -140, last = null, puffs = [], lowWas = null;
+  var mode = 'run', ft = 0, F = null, lastRunA = null, hitsDone = 0;
+  function findEnemy() {   // first spawned enemy that's still alive (enemies register themselves in window.labEnemies)
+    var list = FIGHT_ENEMIES ? (window.labEnemies || []) : [];
+    for (var i = 0; i < list.length; i++) if (list[i].active()) return list[i];
+    return null;
+  }
+  function floorY() { return lane.getBoundingClientRect().bottom - 7; }   // [adapted] the bench-bot floor line, in screen px
+  function placeFloor() { root.style.bottom = (layer.getBoundingClientRect().bottom - floorY()).toFixed(1) + 'px'; }
+
+  // ---- action poses for the fight (angles in degrees; + = forward) ----
+  // lf/lb = front/back leg [thigh, knee bend, toe], af/ab = front/back arm [upper, forearm bend]
+  var CROUCH_A = { lean: 32, head: 8,   lf: [48, 105, 0],  lb: [-22, 85, 10], af: [-55, 35], ab: [-65, 25] };
+  var TUCK_A   = { lean: 25, head: 0,   lf: [85, 135, 20], lb: [75, 130, 20], af: [35, 110], ab: [25, 115] };
+  var READY_A  = { lean: 8,  head: -6,  lf: [35, 70, 15],  lb: [-15, 80, 15], af: [155, 35], ab: [-35, 70] };
+  var SLASH1_A = { lean: 24, head: 4,   lf: [30, 60, 15],  lb: [-20, 75, 15], af: [12, 45],  ab: [-40, 70] };
+  var WIND2_A  = { lean: 18, head: 0,   lf: [20, 70, 15],  lb: [-25, 80, 15], af: [5, 50],   ab: [-75, 30] };
+  var SLASH2_A = { lean: -6, head: -10, lf: [25, 50, 15],  lb: [-30, 60, 15], af: [0, 60],   ab: [165, 20] };
+  var LAND_A   = { lean: 26, head: 6,   lf: [42, 95, 0],   lb: [-28, 80, 10], af: [-35, 40], ab: [-55, 30] };
+
+  function mixA(A, B, k) {
+    var o = {};
+    for (var key in A) o[key] = Array.isArray(A[key]) ? A[key].map(function (v, i) { return v + (B[key][i] - v) * k; }) : A[key] + (B[key] - A[key]) * k;
+    return o;
+  }
+  function easeK(k) { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); }
+  function legFromA(l) { return { at: l[0], bend: l[1], as: l[0] - l[1], toe: l[2] }; }
+  function footY(l) { return T1 * Math.cos(l[0] * D) + T2 * Math.cos((l[0] - l[1]) * D); }
+  function setArmA(el, ua, fb, sx) {
+    el.setAttribute('transform', 'translate(' + sx + ',-28) rotate(' + (-ua).toFixed(2) + ')');
+    el.querySelector('.lr-fore').setAttribute('transform', 'translate(0,16) rotate(' + (-fb).toFixed(2) + ')');
+  }
+  function applyA(A, hipY) {
+    hip.setAttribute('transform', 'translate(' + HIPX + ',' + hipY.toFixed(2) + ')');
+    for (var i = 0; i < leans.length; i++) leans[i].setAttribute('transform', 'rotate(' + A.lean.toFixed(2) + ')');
+    headEl.setAttribute('transform', 'rotate(' + (-A.lean * 0.45 + A.head).toFixed(2) + ' 2 -34) translate(2 -34) scale(1.2) translate(-2 34)');
+    setLeg(LB, legFromA(A.lb), -2); setLeg(LF, legFromA(A.lf), 2);
+    FB.setAttribute('transform', 'translate(-3,1) rotate(' + (-0.45 * A.lb[0]).toFixed(2) + ')');
+    FF.setAttribute('transform', 'translate(3,1) rotate(' + (-0.45 * A.lf[0]).toFixed(2) + ')');
+    setArmA(AF, A.af[0], A.af[1], 2); setArmA(AB, A.ab[0], A.ab[1], 0);
+  }
+  function plantedHip(A) { return GROUND - FOOT - Math.max(footY(A.lf), footY(A.lb)); }
+  function bez(a, c, b, k) { return (1 - k) * (1 - k) * a + 2 * (1 - k) * k * c + k * k * b; }
+
+  var pend = null, unbrake = 0;
+  function startLeap(enemy) {
+    mode = 'fight'; ft = 0.16; hitsDone = 0; pend = null;
+    F = { enemy: enemy, r: enemy.rect(), v: SPEED_U * STRIDE_BOOST * (root.clientWidth / 140), x0: x };
+  }
+  function brakeStep(dt, scale) {          // enemy still landing: skid into a crouch and wait for it
+    ft += dt;
+    var A = mixA(lastRunA, CROUCH_A, easeK(ft / 0.16));
+    if (ft < 0.16) x += F.v * (1 - ft / 0.16) * dt;
+    applyA(A, plantedHip(A));
+    root.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
+    if (ft > 0.16 && (F.enemy.ready() || !F.enemy.active())) { mode = 'run'; unbrake = 0.15; }
+    return A.lean;
+  }
+
+  // ---- the fight: flip in, two slashes, vault over the mech, land, keep running ----
+  function fightStep(dt, scale) {
+    ft += dt;
+    var A, hipY, airW = 1, rx = x, yAir = 0, spin = 0, hipPx = 72 * scale, hipH = 50 * scale;
+    var Sx = F.r.left + 0.1 * F.r.width - hipPx, Sy = 0.55 * F.r.height - hipH;
+    var Lx = F.r.right + 30 - hipPx, peak = F.r.height - hipH + 10;
+    if (ft < 0.16) {                                   // brake into a crouch
+      A = mixA(lastRunA, CROUCH_A, easeK(ft / 0.16)); airW = 0;
+      F.x0 = x = x + F.v * (1 - ft / 0.16) * dt; rx = x;
+    } else if (ft < 0.58) {                            // flip in toward the mech
+      var k = (ft - 0.16) / 0.42;
+      rx = F.x0 + (Sx - F.x0) * easeK(k * 1.1); yAir = Sy * k + 60 * 4 * k * (1 - k);
+      spin = 360 * easeK((k - 0.05) / 0.75);
+      A = k < 0.15 ? mixA(lastRunA, TUCK_A, k / 0.15) : k < 0.8 ? TUCK_A : mixA(TUCK_A, READY_A, (k - 0.8) / 0.2);
+      airW = Math.min(1, k * 6);
+    } else if (ft < 0.88) {                            // two slashes
+      var h = ft - 0.58;
+      if (hitsDone < 1) { hitsDone = 1; F.enemy.hit(1); }
+      if (hitsDone < 2 && ft >= 0.82) { hitsDone = 2; F.enemy.hit(2); }
+      rx = Sx - 8 * Math.sin(Math.min(1, h / 0.3) * Math.PI); yAir = Sy + 14 * Math.sin(Math.min(1, h / 0.3) * Math.PI / 2);
+      A = h < 0.08 ? mixA(READY_A, SLASH1_A, easeK(h / 0.08)) : h < 0.22 ? mixA(SLASH1_A, WIND2_A, easeK((h - 0.08) / 0.14)) : mixA(WIND2_A, SLASH2_A, easeK((h - 0.22) / 0.08));
+      F.vx0 = rx; F.vy0 = yAir;
+    } else if (ft < 1.55) {                            // vault over the top with a flip
+      var v = (ft - 0.88) / 0.67;
+      rx = bez(F.vx0, (F.vx0 + Lx) / 2, Lx, v);
+      yAir = bez(F.vy0, 2 * peak - F.vy0 / 2, 0, v);
+      spin = 360 * easeK(v / 0.85);
+      A = v < 0.2 ? mixA(SLASH2_A, TUCK_A, easeK(v / 0.2)) : v < 0.8 ? TUCK_A : mixA(TUCK_A, LAND_A, (v - 0.8) / 0.2);
+      airW = v > 0.88 ? 1 - (v - 0.88) / 0.12 : 1;
+    } else if (ft < 1.8) {                             // land and spring back into a run
+      if (!F.landed) {
+        F.landed = true;
+        var runU = Lx / scale;
+        [-10, 6, 18].forEach(function (o) { puffs.push({ wx: runU + HIPX + o, age: 0 }); });
+      }
+      var g = (ft - 1.55) / 0.25;
+      A = mixA(LAND_A, lastRunA, easeK(g)); airW = 0;
+      rx = Lx + F.v * 0.5 * g * g * 0.25; x = rx;
+    } else {
+      mode = 'run'; x = rx = Lx + F.v * 0.06; F.enemy.release();
+      return null;
+    }
+    x = rx;
+    hipY = plantedHip(A) * (1 - airW) + 100 * airW;
+    applyA(A, hipY);
+    root.style.transform = 'translate3d(' + rx.toFixed(1) + 'px,' + (-yAir).toFixed(1) + 'px,0) rotate(' + spin.toFixed(1) + 'deg)';
+    return A.lean;
+  }
 
   function ribbon(a, len, n, width, amp, freq, off) {
     var top = [], bot = [], i;
@@ -2028,17 +2149,42 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     return d + ' Z';
   }
 
+  var target = null;
   function frame(dt) {
+    placeFloor();   // [adapted] follow the floor line as the page scrolls
     t += dt;
-    phase += TAU * dt / CYCLE;
-    var scale = root.clientWidth / 140;
-    x += SPEED_U * STRIDE_BOOST * scale * dt;
+    target = mode === 'run' ? (pend ? pend.enemy : findEnemy()) : null;
+    var sprint = target ? 2 : 1;                       // sprint while an enemy is out there
+    phase += TAU * dt / CYCLE * sprint;
+    var scale = root.clientWidth / 140, lean;
+    var fightLean = mode === 'fight' ? fightStep(dt, scale) : mode === 'brake' ? brakeStep(dt, scale) : null;
+    if (fightLean !== null) { lean = fightLean; }
+    else {
+    var speed = SPEED_U * STRIDE_BOOST * scale * sprint;
+    x += speed * dt;   // [adapted] no wrap-around: the loop below stops once he's off the right edge
     root.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
+    // chasing an enemy: keep running; trigger its attack early enough that it fires just as we reach the
+    // leap point, then jump the instant it fires (so the shot goes under us)
+    if (target) {
+      var r = target.rect(), hipNow = x + 72 * scale, leapHip = r.left + 0.1 * r.width - 190;
+      var at = target.attackTime ? target.attackTime() : 0, triggerHip = leapHip - speed * at;
+      if (pend) {
+        pend.left -= dt;
+        if (pend.left <= 0 || hipNow >= leapHip + 40) startLeap(target);
+      } else if (target.ready()) {
+        if (hipNow >= triggerHip && hipNow < leapHip + 30 && target.engage()) {
+          if (at > 0) { target.attack(leapHip, floorY() - 30 * scale); pend = { enemy: target, left: at - 0.12 }; }
+          else startLeap(target);
+        }
+      } else if (hipNow >= triggerHip + 4 && hipNow < leapHip) {
+        mode = 'brake'; ft = 0; F = { enemy: target, v: speed };
+      }
+    }
 
     var pb = legPose(phase + Math.PI), pf = legPose(phase);
     var gap = pb.y - pf.y;
     var hipY = GROUND - FOOT - softMax(pb.y, pf.y) - 5 * Math.exp(-gap * gap / 40);   // short airborne hop between steps
-    var lean = 17 + 1.5 * Math.sin(2 * phase - 0.6);
+    lean = 17 + 1.5 * Math.sin(2 * phase - 0.6);
     hip.setAttribute('transform', 'translate(' + HIPX + ',' + hipY.toFixed(2) + ')');
     for (var i = 0; i < leans.length; i++) leans[i].setAttribute('transform', 'rotate(' + lean.toFixed(2) + ')');
     var hr = -lean * 0.5 + 1.5 * Math.sin(2 * phase - 1.2);
@@ -2049,6 +2195,11 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     FF.setAttribute('transform', 'translate(3,1) rotate(' + (-0.45 * pf.at).toFixed(2) + ')');
     setArm(AF, phase + Math.PI, 2 + 1.2 * Math.sin(phase));
     setArm(AB, phase, -1.2 * Math.sin(phase));
+    var sF = Math.sin(phase + Math.PI - 0.3), sB = Math.sin(phase - 0.3);
+    lastRunA = { lean: lean, head: 1.5 * Math.sin(2 * phase - 1.2), lf: [pf.at, pf.bend, pf.toe], lb: [pb.at, pb.bend, pb.toe],
+                 af: [6 + 32 * sF, 82 + 14 * sF], ab: [6 + 32 * sB, 82 + 14 * sB] };
+    if (unbrake > 0) { unbrake -= dt; var UA = mixA(CROUCH_A, lastRunA, 1 - Math.max(0, unbrake) / 0.15); applyA(UA, plantedHip(UA)); }
+    }
 
     // cloak + scarf tails flowing behind
     var w = function (k, amp) { return amp * (Math.sin(t * TAU * 2.0 - k * 1.2) + 0.3 * Math.sin(2 * phase - k)); };
@@ -2068,9 +2219,10 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     tip.setAttribute('opacity', Math.sin(t * 6) > -0.3 ? 1 : 0.35);
 
     // dust puff when the planted foot switches
-    var runU = x / scale, low = pf.y >= pb.y ? 'f' : 'b';
-    if (lowWas && low !== lowWas) {
-      var p = low === 'f' ? pf : pb;
+    var runU = x / scale, low = mode === 'run' ? (legPose(phase).y >= legPose(phase + Math.PI).y ? 'f' : 'b') : null;
+    if (lowWas && low && low !== lowWas) {
+      var qf = legPose(phase), qb = legPose(phase + Math.PI);
+      var p = low === 'f' ? qf : qb;
       puffs.push({ wx: runU + HIPX + (low === 'f' ? 2 : -2) + p.x - 4, age: 0 });
     }
     lowWas = low;
@@ -2084,40 +2236,50 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     dustG.innerHTML = html;
   }
 
-  // ---- one sprint per click: enter off the left edge, exit off the right, then hide ----
-  var running = false;
-  function finish() { running = false; root.classList.remove('go'); dustG.innerHTML = ''; }
+  // ---- [adapted] one run per spawn: enter off the left edge, fight, exit off the right, then hide ----
+  var running = false, waiting = false;
+  function finish() { running = false; waiting = false; root.classList.remove('go'); dustG.innerHTML = ''; }
+  // [adapted] wait off-screen, then set off at the moment that has him reach the mech's attack point
+  // right as it finishes landing, so he never has to stop and wait for it
+  function readyToSetOff() {
+    var e = findEnemy();
+    if (!e || !e.readyIn) return true;
+    var scale = root.clientWidth / 140, speed = SPEED_U * STRIDE_BOOST * scale * 2, r = e.rect();
+    var leapHip = r.left + 0.1 * r.width - 190, at = e.attackTime ? e.attackTime() : 0;
+    var dist = Math.max(0, leapHip - speed * at - (x + 72 * scale));
+    return e.readyIn() <= Math.max(0, dist / speed - 0.05);
+  }
   function loop(now) {
+    if (waiting) {
+      if (!readyToSetOff()) { requestAnimationFrame(loop); return; }
+      waiting = false; last = null; root.classList.add('go');
+    }
     var dt = last == null ? 0 : Math.min(0.05, (now - last) / 1000);
     last = now; frame(dt);
-    if (x > lane.clientWidth + 40) { finish(); return; }
+    if (mode === 'run' && !target && x > layer.clientWidth + 40) { finish(); return; }
     requestAnimationFrame(loop);
   }
-  btn.addEventListener('click', function () {
+  window.labRunnerGo = function () {   // called by the mech's footer button
     if (running) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     running = true;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      // reduced motion: show a still pose for a moment instead of a sprint
-      phase = 0.8; t = 0; x = 0; frame(0); dustG.innerHTML = '';
-      root.style.transform = 'translate3d(24px,0,0)'; root.classList.add('go');
-      setTimeout(finish, 2500);
-      return;
-    }
-    phase = 0; t = 0; last = null; puffs = []; lowWas = null;
+    phase = 0; t = 0; last = null; puffs = []; lowWas = null; mode = 'run'; pend = null; unbrake = 0;
     x = -root.clientWidth - 20;
-    frame(0); root.classList.add('go');
+    frame(0); waiting = true;   // shown once he sets off (see readyToSetOff)
     requestAnimationFrame(loop);
-  });
+  };
 })();
 
-/* ---------- Lab Mech: footer button drops a walker mech onto the bench-bot floor ---------- */
-/* Art, poses, and effects from LAB_MECH.md. Adapted: waits for the button instead of dropping on load,
-   and lands on the .botlane dashed floor line (tracked every frame) instead of its own ground strip. */
+/* ---------- Lab Mech: footer button drops a walker mech onto the bench-bot floor; the runner fights it ---------- */
+/* Art, poses, effects, and fight hooks from the lab-fight demo. Adapted: waits for the hidden footer button
+   (which also sends the runner out), and lands on the .botlane dashed floor line instead of its own ground strip. */
 (function labMech() {
   // ---------------- settings ----------------
   var POS_X = 0.78;        // where it lands: 0 = left edge, 1 = right edge
   var FALL_TIME = 0.7;     // seconds to fall from the top of the screen
-  var FEET = 3;            // px the mech box sits below the floor line so its boots touch it
+  var FEET = 3;
+  var SHOOT_LASER = true;    // fires a laser at the runner before he attacks
+  var LASER_CHARGE = 0.6;    // seconds the laser charges before firing            // px the mech box sits below the floor line so its boots touch it
   // ------------------------------------------
 
   var layer = document.querySelector('.lab-mech-layer');
@@ -2223,8 +2385,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       '<circle class="lm-glow-t lm-status" cx="128.5" cy="103" r="2.2" fill="' + C.teal + '" stroke="none"/>' +
       // sensor slit
       '<path d="M56 67 L144 67 L140 87 L60 87 Z" fill="' + C.aDD + '"/>' +
-      '<path class="lm-glow-t" d="M62 72 L138 72 L135 82 L65 82 Z" fill="' + C.tealD + '" stroke="none"/>' +
-      '<g clip-path="url(#lm-visor-clip)" stroke="none">' +
+      '<path class="lm-glow-t lm-lens" d="M62 72 L138 72 L135 82 L65 82 Z" fill="' + C.tealD + '" stroke="none"/>' +
+      '<g class="lm-lens" clip-path="url(#lm-visor-clip)" stroke="none">' +
         '<rect x="60" y="75" width="80" height="3" fill="' + C.teal + '" opacity=".8"/>' +
         '<rect class="lm-scan" x="-40" y="60" width="12" height="40" fill="#e9fffb" opacity=".55" transform="skewX(-22)"/>' +
       '</g>' +
@@ -2258,7 +2420,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   var q = function (s) { return mech.querySelector(s); };
   var E = {};
   ['Lth','Lsh','Lbt','Rth','Rsh','Rbt','Lua','Lfa','Rua','Rfa','Lfl','Rfl','body','shoulders','scan','flare','spiral','spiral2','status','cfL','cfR','Lpl','Rpl','cfire','chL','chR'].forEach(function (k) { E[k] = q('.lm-' + k); });
-  var streaks = q('.lm-streaks'), flames = q('.lm-flames'), flameEls = mech.querySelectorAll('.lm-flame');
+  var streaks = q('.lm-streaks'), flames = q('.lm-flames'), flameEls = mech.querySelectorAll('.lm-flame'), lensEls = mech.querySelectorAll('.lm-lens');
 
   var D = 180 / Math.PI, HB = 146, LIFT = 10;   // HB = hull bottom line
   function f2(n) { return n.toFixed(2); }
@@ -2317,7 +2479,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
 
   // ---------------- effects canvas ----------------
   var CH = 400, CW = 0, GY = CH - 28, W = 260, cx = 0;
-  var debris = [], sparks = [], dust = [], rings = [], cracks = [], smoke = [], flash = 0, shake = 0;
+  var debris = [], sparks = [], dust = [], rings = [], cracks = [], smoke = [], slashes = [], fire = [], gfires = [], scorches = [], beams = [], charge = [], pieces = [], glowE = null, flash = 0, flashAll = 0, flashP = 0, shake = 0;
   function placeFloor() {   // [adapted] stand on the bench-bot lane's dashed floor line, wherever it is on screen
     GY = lane.getBoundingClientRect().bottom - 7;
     mech.style.bottom = (layer.getBoundingClientRect().bottom - GY - FEET).toFixed(1) + 'px';
@@ -2359,6 +2521,57 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   function hiss(pts) {   // little white hydraulic puffs at joints
     pts.forEach(function (p) { var sp = toScreen([p[0] + 0, p[1]]); puffSmoke(sp, p[0] < 100 ? -1 : 1, 3, 0.6, false, 0.6); });
   }
+  function shp(d, fill, stroke, w) { return { p: new Path2D(d), f: fill, s: stroke, w: w }; }
+  var CIRC = function (r) { return 'M' + (-r) + ' 0 A' + r + ' ' + r + ' 0 1 0 ' + r + ' 0 A' + r + ' ' + r + ' 0 1 0 ' + (-r) + ' 0 Z'; };
+  var PARTS = {
+    drill:    { sc: 1.3, sh: [shp('M-14 -8 L14 -8 L0 22 Z', C.aL), shp('M-9 -3 L7 0 M-6 5 L5 7 M-3 13 L2 14', null, C.aD, 2.2), shp('M-16 -24 L16 -24 L18 -8 L-18 -8 Z', C.a), shp('M-17 -16 L17 -16', null, C.org, 4)] },
+    claw:     { sc: 1.3, sh: [shp('M-12 -6 L-16 7 L-10 14 L-7 8 L-7 -5 Z', C.aL), shp('M-3 -5 L-3 12 L0 16 L3 12 L3 -5 Z', C.aL), shp('M12 -6 L16 7 L10 14 L7 8 L7 -5 Z', C.aL), shp('M-16 -24 L16 -24 L18 -6 L-18 -6 Z', C.a), shp('M-17 -15 L17 -15', null, C.org, 4)] },
+    shoulder: { sc: 1.4, sh: [shp('M-24 4 L-18 -14 L6 -20 L22 -12 L20 8 L-20 12 Z', C.a), shp('M6 -20 L22 -12 L20 8 L4 10 Z', C.aS, null), shp('M-21 6 L19 2', null, C.org, 4), shp('M-17 -10 L4 -16', null, C.aLL, 3)] },
+    hullTop:  { sc: 1,   sh: [shp('M-42 12 L-30 -10 L30 -10 L42 12 Z', C.a), shp('M0 -10 L30 -10 L42 12 L0 12 Z', C.aS, null), shp('M-36 8 L-26 -5 L-2 -5', null, C.aLL, 3)] },
+    sensor:   { sc: 1,   glow: true, sh: [shp('M-40 -7 L40 -7 L37 7 L-37 7 Z', C.aDD), shp('M-34 -3 L34 -3 L32 3 L-32 3 Z', C.tealD, null), shp('M-30 0 L30 0', null, C.teal, 2.5)] },
+    chest:    { sc: 1,   sh: [shp('M-14 -18 L14 -18 L11 18 L-11 18 Z', C.aD), shp('M0 -16 L0 16', null, C.aDD, 2)] },
+    chimney:  { sc: 1,   sh: [shp('M-6 13 L-8 -12 L5 -14 L8 11 Z', C.aDD), shp('M-8 -8 L5 -10', null, C.aD, 3)] },
+    foot:     { sc: 1,   sh: [shp('M-17 -10 L17 -10 L21 2 L-21 2 Z', C.aDD), shp('M-27 2 L-10 2 L-10 14 L-29 14 Z', C.aD), shp('M-8 2 L8 2 L8 14 L-8 14 Z', C.a), shp('M10 2 L27 2 L29 14 L10 14 Z', C.aD)] },
+    shin:     { sc: 1,   sh: [shp('M-12 -11 L12 -11 L15 11 L-15 11 Z', C.a), shp('M-13 1 L13 1', null, C.org, 3)] },
+    arm:      { sc: 1,   sh: [shp('M-13 -14 L13 -14 L11 14 L-11 14 Z', C.aD), shp('M-5 -8 L5 -8 L5 8 L-5 8 Z', C.inner, null)] },
+    joint:    { sc: 1,   sh: [shp(CIRC(11), C.aL), shp(CIRC(3.5), C.aDD, null)] }
+  };
+  var PART_LIST = ['drill', 'claw', 'shoulder', 'shoulder', 'hullTop', 'sensor', 'chest', 'chimney', 'chimney', 'foot', 'foot', 'shin', 'shin', 'arm', 'arm', 'joint', 'joint', 'joint'];
+  function miniBoom(x, y, big) {
+    var s = W / 200, m = big ? 1.4 : 1;
+    for (var i = 0; i < 12; i++) fire.push({ x: x + R(-6, 6), y: y + R(-6, 6), vx: R(-170, 170) * m, vy: R(-220, 60) * m, r: R(5, 10) * s * m, g: R(14, 30) * s * m, t: 0, life: R(0.45, 0.9) });
+    for (i = 0; i < 14; i++) sparks.push({ x: x, y: y, vx: R(-600, 600), vy: R(-650, 250), t: 0 });
+  }
+  function poly(n) { var p = []; for (var j = 0; j < n; j++) { var an = j / n * 6.283 + R(-0.3, 0.3), rr = R(0.55, 1); p.push([Math.cos(an) * rr, Math.sin(an) * rr]); } return p; }
+  function explode() {
+    var r = mech.getBoundingClientRect(), ex = r.left + r.width / 2, ey = r.top + r.height * 0.52, s = W / 200, i;
+    var partCols = [C.a, C.aL, C.aD, C.aDD, C.aS];
+    for (i = 0; i < 46; i++) fire.push({ x: ex + R(-25, 25) * s, y: ey + R(-35, 35) * s, vx: R(-300, 300), vy: R(-420, 80),
+      r: R(10, 22) * s, g: R(30, 75) * s, t: 0, life: R(0.9, 1.9) });
+    PART_LIST.forEach(function (n, j) {
+      var key = n === 'drill' || n === 'claw', dir = j % 2 ? -1 : 1;
+      pieces.push({ d: PARTS[n], x: ex + R(-45, 45) * s, y: ey + R(-50, 40) * s,
+        vx: key ? dir * R(700, 1250) : R(-1300, 1300), vy: key ? -R(500, 900) : -R(400, 1450),
+        a: R(0, 6.3), va: R(-14, 14), t: 0, burn: Math.random() < 0.4, rest: false,
+        boomAt: !key && Math.random() < 0.4 ? R(0.35, 1.3) : 0 });
+    });
+    for (i = 0; i < 16; i++) debris.push({ x: ex + R(-30, 30) * s, y: ey + R(-40, 40) * s, vx: R(-1150, 1150), vy: -R(250, 1350),
+      a: R(0, 6.3), va: R(-18, 18), r: R(5, 15) * s * 0.85, c: partCols[i % partCols.length], pts: poly(3 + (i % 4)),
+      t: 0, b: 0, long: true, burn: i % 4 === 0, stripe: i % 3 === 0 });
+    for (i = 0; i < 50; i++) sparks.push({ x: ex, y: ey, vx: R(-950, 950), vy: R(-1100, 300), t: 0 });
+    puffs([ex - 60 * s, ex + 60 * s, ex], 30, 520);
+    rings.push({ t: 0 }); rings.push({ t: 0, air: true, x: ex, y: ey });
+    for (i = 0; i < 6; i++) {
+      var dir = i % 2 ? -1 : 1, p = [ex + R(-30, 30) * s, GY + 3], path = [p.slice()];
+      for (var k = 0; k < 9; k++) { p = [p[0] + dir * R(8, 20), Math.min(CH - 4, Math.max(GY + 3, p[1] + R(-2, 5)))]; path.push(p.slice()); }
+      cracks.push({ p: path, t: -4 });
+    }
+    for (i = 0; i < 5; i++) gfires.push({ x: ex + R(-70, 70) * s, h: R(14, 30) * s, t: 0, life: R(2.8, 4.2) });
+    scorches.push({ x: ex, t: 0, w: 95 * s });
+    shake = 0.8; flash = 0.3; flashAll = 0.35;
+    state = 'destroyed'; st = 0; doomed = false; downT = 9; hitT = 9; tilt = 0; fighting = false;
+    mech.style.opacity = '0'; mech.classList.remove('lm-clickable');
+  }
   function impact() {
     var s = W / 200, pts = [cx - 38 * s, cx + 38 * s, cx - 91 * s, cx + 105 * s], cols = ['#3f4d60', '#2a3442', '#5a6a80', '#1c2530', '#4a3a2a'];
     for (var i = 0; i < 48; i++) {
@@ -2382,24 +2595,65 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     });
     flash = 0.2; shake = 0.45;
   }
+  var G = 1500;
+  function easeOut(k) { return 1 - (1 - k) * (1 - k); }
   function fx(dt) {
-    var G = 1500;
     debris = debris.filter(function (d) {
       d.t += dt; d.vy += G * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.a += d.va * dt;
       if (d.y > GY - d.r * 0.5 && d.vy > 0) { d.y = GY - d.r * 0.5; d.vy *= -0.32; d.vx *= 0.55; d.va *= 0.5; d.b++; if (d.b > 2) d.vy = 0; }
-      return d.t < 3.4 && d.x > -60 && d.x < CW + 60;
+      if (d.burn && d.t < 2.6 && Math.random() < 0.45) smoke.push({ x: d.x, y: d.y, vx: R(-10, 10), vy: -R(10, 40), r: 2, g: 10, t: 0, life: R(0.8, 1.4), dark: true });
+      return d.t < (d.long ? 4.6 : 3.4) && d.x > -60 && d.x < CW + 60;
     });
     sparks = sparks.filter(function (p) { p.t += dt; p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; return p.t < 0.55 && p.y < GY + 2; });
     dust = dust.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.pow(0.12, dt); return p.t < 1.4; });
     rings = rings.filter(function (r) { r.t += dt; return r.t < 0.55; });
+    slashes = slashes.filter(function (q2) { q2.t += dt; return q2.t < 0.25; });
+    fire = fire.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.pow(0.08, dt); p.vy = p.vy * Math.pow(0.12, dt) - 40 * dt; return p.t < p.life; });
+    gfires = gfires.filter(function (g) {
+      g.t += dt;
+      if (Math.random() < 0.3) smoke.push({ x: g.x + R(-4, 4), y: GY - g.h * 0.8, vx: R(0, 15), vy: -R(30, 60), r: 3, g: 18, t: 0, life: R(1.4, 2.2), dark: true });
+      return g.t < g.life;
+    });
+    scorches = scorches.filter(function (sc3) { sc3.t += dt; return sc3.t < 12; });
+    flashAll = Math.max(0, flashAll - dt);
+    beams = beams.filter(function (b2) {
+      b2.t += dt;
+      var bx2 = b2.B[0] + b2.sweep * easeOut(Math.min(1, b2.t / 0.6));
+      b2.cx = bx2;
+      for (var i = 0; i < 2; i++) sparks.push({ x: bx2 + R(-8, 8), y: GY - 2, vx: R(-450, 450), vy: -R(250, 700), t: 0 });
+      if (b2.t >= b2.next && b2.t < 0.55) { b2.next += 0.11; laserBlast(bx2, false); }
+      return b2.t < 0.6;
+    });
+    charge = charge.filter(function (c2) { c2.t += dt; return c2.t < c2.life; });
+    pieces = pieces.filter(function (p) {
+      p.t += dt;
+      var sc4 = W / 200, floor = GY - 7 * sc4;
+      if (!p.rest) {
+        p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.a += p.va * dt;
+        if (p.y > floor && p.vy > 0) { p.y = floor; p.vy *= -0.32; p.vx *= 0.55; p.va *= 0.45; if (Math.abs(p.vy) < 70) { p.vy = 0; p.rest = true; } }
+      } else { p.vx *= Math.pow(0.03, dt); p.x += p.vx * dt; }
+      if (p.boomAt && p.t >= p.boomAt) {                      // the part itself blows apart mid-air
+        miniBoom(p.x, p.y, false);
+        for (var i = 0; i < 5; i++) debris.push({ x: p.x, y: p.y, vx: R(-500, 500), vy: -R(150, 500), a: R(0, 6.3), va: R(-16, 16),
+          r: R(3, 6) * sc4, c: i % 2 ? C.a : C.aD, pts: poly(3 + (i % 3)), t: 0, b: 0, long: true });
+        return false;
+      }
+      if (p.burn && p.t < 3 && Math.random() < 0.5) smoke.push({ x: p.x, y: p.y, vx: R(-10, 10), vy: -R(10, 40), r: 2, g: 12, t: 0, life: R(0.8, 1.4), dark: true });
+      return p.t < 5.5 && p.x > -300 && p.x < CW + 300;
+    });
     smoke = smoke.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy *= Math.pow(0.55, dt); p.vx += 14 * dt; return p.t < p.life; });
-    cracks = cracks.filter(function (c) { c.t += dt; return c.t < 7; });
+    cracks = cracks.filter(function (c) { c.t += dt; return c.t < 7; });  // (explosion cracks start at -4 so they last longer)
     flash = Math.max(0, flash - dt);
   }
   function draw(shadowK) {
     ctx.clearRect(0, 0, CW, CH);
+    scorches.forEach(function (sc3) {
+      var sa = sc3.t > 9 ? 0.6 * (1 - (sc3.t - 9) / 3) : 0.6;
+      ctx.fillStyle = 'rgba(8,10,14,' + sa.toFixed(2) + ')';
+      ctx.beginPath(); ctx.ellipse(sc3.x, GY + 2, sc3.w, Math.min(8, sc3.w / 4), 0, 0, 6.283); ctx.fill();
+    });
     smoke.forEach(function (p) {
-      var k = p.t / p.life, a = (p.dark ? 0.5 : 0.45) * (1 - k) * Math.min(1, p.t * 8);
+      var k = p.t / p.life, a = (p.dark ? 0.34 : 0.3) * (1 - k) * Math.min(1, p.t * 8);
       ctx.fillStyle = (p.dark ? 'rgba(38,45,56,' : 'rgba(170,182,198,') + a.toFixed(3) + ')';
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + p.g * Math.sqrt(k), 0, 6.283); ctx.fill();
     });
@@ -2408,7 +2662,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       ctx.beginPath(); ctx.ellipse(cx, GY + 1, W * (0.12 + 0.34 * shadowK), 3 + 5 * shadowK, 0, 0, 6.283); ctx.fill();
     }
     cracks.forEach(function (c) {
-      var a = c.t > 5.5 ? 1 - (c.t - 5.5) / 1.5 : 1;
+      var a = c.t > 5.5 ? 1 - (c.t - 5.5) / 1.5 : 1; if (c.t < 0) a = 1;
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       [['rgba(80,96,118,' + a + ')', 1.2, 1.2], ['rgba(8,12,17,' + a + ')', 2.4, 0]].forEach(function (st) {
         ctx.strokeStyle = st[0]; ctx.lineWidth = st[1]; ctx.beginPath();
@@ -2418,20 +2672,96 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     });
     rings.forEach(function (r) {
       var k = r.t / 0.55;
+      if (r.air) {
+        ctx.strokeStyle = 'rgba(255,230,190,' + (0.7 * (1 - k)) + ')'; ctx.lineWidth = 5 * (1 - k) + 1;
+        ctx.beginPath(); ctx.arc(r.x, r.y, 30 + 420 * k, 0, 6.283); ctx.stroke(); return;
+      }
       ctx.strokeStyle = 'rgba(210,225,240,' + (0.6 * (1 - k)) + ')'; ctx.lineWidth = 3 * (1 - k) + 1;
-      ctx.beginPath(); ctx.ellipse(cx, GY + 1, 20 + 300 * k, 4 + 18 * k, 0, 0, 6.283); ctx.stroke();
+      var rs = r.small ? 0.3 : 1;
+      ctx.beginPath(); ctx.ellipse(r.gx || cx, GY + 1, (20 + 300 * k) * rs, (4 + 18 * k) * rs, 0, 0, 6.283); ctx.stroke();
     });
     dust.forEach(function (p) {
       var k = p.t / 1.4;
       ctx.fillStyle = 'rgba(150,165,185,' + (0.45 * (1 - k)) + ')';
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 24 * k, 0, 6.283); ctx.fill();
     });
+    fire.forEach(function (p) {
+      var k = p.t / p.life, rr = p.r + p.g * Math.sqrt(k), col;
+      if (p.purple) col = k < 0.12 ? 'rgba(250,238,255,' + (0.95 - k).toFixed(2) + ')' : k < 0.45 ? 'rgba(' + Math.round(176 - 120 * (k - 0.12)) + ',92,255,' + (0.85 - k).toFixed(2) + ')' : 'rgba(40,36,56,' + (0.5 * (1 - k)).toFixed(2) + ')';
+      else if (k < 0.12) col = 'rgba(255,246,214,' + (0.95 - k).toFixed(2) + ')';
+      else if (k < 0.4) col = 'rgba(255,' + Math.round(170 - 180 * (k - 0.12)) + ',60,' + (0.9 - k).toFixed(2) + ')';
+      else col = 'rgba(40,44,52,' + (0.55 * (1 - k)).toFixed(2) + ')';
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.283); ctx.fill();
+    });
+    gfires.forEach(function (g) {
+      var fade = g.t > g.life - 0.8 ? (g.life - g.t) / 0.8 : 1, hh = g.h * fade * R(0.75, 1.15);
+      ctx.save(); ctx.shadowColor = '#ff7a2e'; ctx.shadowBlur = 10;
+      ctx.fillStyle = 'rgba(255,122,46,' + (0.9 * fade).toFixed(2) + ')';
+      ctx.beginPath(); ctx.moveTo(g.x - hh * 0.35, GY); ctx.quadraticCurveTo(g.x - hh * 0.2, GY - hh * 0.6, g.x, GY - hh); ctx.quadraticCurveTo(g.x + hh * 0.2, GY - hh * 0.6, g.x + hh * 0.35, GY); ctx.fill();
+      ctx.fillStyle = 'rgba(255,236,190,' + (0.9 * fade).toFixed(2) + ')';
+      ctx.beginPath(); ctx.moveTo(g.x - hh * 0.15, GY); ctx.quadraticCurveTo(g.x, GY - hh * 0.55, g.x + hh * 0.15, GY); ctx.fill();
+      ctx.restore();
+    });
     debris.forEach(function (d) {
-      var al = d.t > 2.8 ? 1 - (d.t - 2.8) / 0.6 : 1;
+      var al = d.long ? (d.t > 3.8 ? 1 - (d.t - 3.8) / 0.8 : 1) : (d.t > 2.8 ? 1 - (d.t - 2.8) / 0.6 : 1);
+      if (d.burn && d.t < 2.6) {
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - d.t / 2.6); ctx.fillStyle = '#ff7a2e'; ctx.shadowColor = '#ff7a2e'; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r * 0.7, 0, 6.283); ctx.fill(); ctx.restore();
+      }
       ctx.save(); ctx.globalAlpha = Math.max(0, al); ctx.translate(d.x, d.y); ctx.rotate(d.a);
       ctx.fillStyle = d.c; ctx.strokeStyle = '#0f151d'; ctx.lineWidth = 1.5; ctx.beginPath();
       d.pts.forEach(function (p, i) { ctx[i ? 'lineTo' : 'moveTo'](p[0] * d.r, p[1] * d.r); });
-      ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (d.stripe) { ctx.strokeStyle = C.org; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-d.r * 0.6, 0); ctx.lineTo(d.r * 0.6, 0); ctx.stroke(); }
+      ctx.restore();
+    });
+    pieces.forEach(function (p) {
+      var al = p.t > 4.5 ? 1 - (p.t - 4.5) : 1, sc5 = (W / 200) * p.d.sc;
+      ctx.save(); ctx.globalAlpha = Math.max(0, al);
+      if (p.burn && p.t < 3) {
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - p.t / 3); ctx.fillStyle = '#ff7a2e'; ctx.shadowColor = '#ff7a2e'; ctx.shadowBlur = 16;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 10 * sc5, 0, 6.283); ctx.fill(); ctx.restore();
+      }
+      ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc5, sc5);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      if (p.d.glow) { ctx.shadowColor = '#3ff0d6'; ctx.shadowBlur = 10; }
+      p.d.sh.forEach(function (q3) {
+        if (q3.f) { ctx.fillStyle = q3.f; ctx.fill(q3.p); if (q3.s !== null) { ctx.strokeStyle = C.ol; ctx.lineWidth = 3; ctx.stroke(q3.p); } }
+        else { ctx.strokeStyle = q3.s; ctx.lineWidth = q3.w; ctx.stroke(q3.p); }
+      });
+      ctx.restore();
+    });
+    if (glowE) {
+      var gk = glowE.k, gr = (12 + 44 * gk) * (0.85 + 0.3 * Math.random());
+      var g3 = ctx.createRadialGradient(glowE.x, glowE.y, 0, glowE.x, glowE.y, gr);
+      g3.addColorStop(0, 'rgba(246,228,255,' + (0.4 + 0.6 * gk).toFixed(2) + ')'); g3.addColorStop(1, 'rgba(176,92,255,0)');
+      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(glowE.x, glowE.y, gr, 0, 6.283); ctx.fill();
+    }
+    charge.forEach(function (c2) {
+      var k = c2.t / c2.life, ex2 = glowE ? glowE.x : c2.x0, ey2 = glowE ? glowE.y : c2.y0;
+      ctx.fillStyle = 'rgba(206,160,255,' + (0.3 + 0.7 * k).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(c2.x0 + (ex2 - c2.x0) * k * k, c2.y0 + (ey2 - c2.y0) * k * k, 2.2, 0, 6.283); ctx.fill();
+    });
+    beams.forEach(function (b2) {
+      var k = b2.t / 0.6, a = k < 0.06 ? k / 0.06 : 1 - Math.pow((k - 0.06) / 0.94, 2), wob = 1 + 0.3 * Math.sin(b2.t * 90);
+      var Ex = b2.E[0], Ey = b2.E[1], Bx = b2.cx || b2.B[0], By = b2.B[1];
+      ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#b05cff'; ctx.shadowBlur = 34;
+      [['rgba(140,60,255,' + (0.35 * a).toFixed(2) + ')', 40], ['rgba(176,92,255,' + (0.7 * a).toFixed(2) + ')', 20], ['rgba(250,238,255,' + a.toFixed(2) + ')', 8]].forEach(function (L) {
+        ctx.strokeStyle = L[0]; ctx.lineWidth = L[1] * wob * Math.max(0.12, a);
+        ctx.beginPath(); ctx.moveTo(Ex, Ey); ctx.lineTo(Bx, By); ctx.stroke();
+      });
+      ctx.strokeStyle = 'rgba(220,180,255,' + (0.9 * a).toFixed(2) + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(Ex, Ey);
+      for (var j = 1; j < 12; j++) {
+        var f = j / 12, nx = -(By - Ey), ny = Bx - Ex, nl = Math.hypot(nx, ny) || 1, off = R(-14, 14);
+        ctx.lineTo(Ex + (Bx - Ex) * f + nx / nl * off, Ey + (By - Ey) * f + ny / nl * off);
+      }
+      ctx.lineTo(Bx, By); ctx.stroke();
+      [[Bx, By, 70], [Ex, Ey, 46]].forEach(function (G2) {
+        var g4 = ctx.createRadialGradient(G2[0], G2[1], 0, G2[0], G2[1], G2[2]);
+        g4.addColorStop(0, 'rgba(250,238,255,' + (0.9 * a).toFixed(2) + ')'); g4.addColorStop(0.4, 'rgba(176,92,255,' + (0.5 * a).toFixed(2) + ')'); g4.addColorStop(1, 'rgba(176,92,255,0)');
+        ctx.fillStyle = g4; ctx.fillRect(G2[0] - G2[2], G2[1] - G2[2], G2[2] * 2, G2[2] * 2);
+      });
+      ctx.restore();
     });
     ctx.save(); ctx.shadowColor = '#ff9a2e'; ctx.shadowBlur = 6; ctx.lineCap = 'round';
     sparks.forEach(function (p) {
@@ -2439,6 +2769,22 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
     });
     ctx.restore();
+    slashes.forEach(function (q2) {
+      var k = q2.t / 0.25, a = 1 - k, x0 = q2.x, y0 = q2.y;
+      ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#ff9a2e'; ctx.shadowBlur = 12;
+      ctx.strokeStyle = 'rgba(255,236,200,' + a.toFixed(2) + ')'; ctx.lineWidth = 6 * a + 1;
+      ctx.beginPath();
+      if (q2.n < 2) { ctx.moveTo(x0 - 45, y0 - 50); ctx.quadraticCurveTo(x0 + 25, y0 - 25, x0 + 30, y0 + 40); }
+      else { ctx.moveTo(x0 - 25, y0 + 45); ctx.quadraticCurveTo(x0 + 35, y0 + 10, x0 + 40, y0 - 60); }
+      ctx.stroke();
+      var g2 = ctx.createRadialGradient(x0, y0, 0, x0, y0, 50);
+      g2.addColorStop(0, 'rgba(255,240,210,' + (0.8 * a).toFixed(2) + ')'); g2.addColorStop(1, 'rgba(255,240,210,0)');
+      ctx.fillStyle = g2; ctx.fillRect(x0 - 50, y0 - 50, 100, 100);
+      ctx.restore();
+    });
+    flashP = Math.max(0, flashP - 1 / 60);
+    if (flashP > 0) { ctx.fillStyle = 'rgba(176,92,255,' + (flashP / 0.3 * 0.16).toFixed(3) + ')'; ctx.fillRect(0, 0, CW, CH); }
+    if (flashAll > 0) { ctx.fillStyle = 'rgba(255,236,205,' + (flashAll / 0.35 * 0.2).toFixed(3) + ')'; ctx.fillRect(0, 0, CW, CH); }
     if (flash > 0) {
       var g = ctx.createRadialGradient(cx, GY - 20, 0, cx, GY - 20, W * 0.8);
       g.addColorStop(0, 'rgba(255,240,210,' + (flash / 0.2 * 0.55) + ')'); g.addColorStop(1, 'rgba(255,240,210,0)');
@@ -2448,16 +2794,77 @@ document.querySelectorAll(".flow .blk").forEach(g => {
 
   // ---------------- state machine ----------------
   var state = 'wait', st = 0, t = 0, y = -99999, last = null, flareT = 9, it = 0, nextBF = 5, bfT = 9, smokeAcc = 0;
+  // ---- fight hooks used by the Lab Runner ----
+  var fighting = false, hitT = 9, hitN = 0, downT = 9, tilt = 0, doomed = false, laser = null, popI = 0;
+  var enemy = window.labMech = {
+    name: 'mech',
+    active: function () { return state === 'gone' || state === 'fall' || state === 'land' || (state === 'idle' && !doomed && downT > 1.9); },
+    ready: function () { return state === 'idle' && !fighting && downT > 1.9 && it > 0.2; },
+    readyIn: function () {   // [adapted] seconds until ready(), so the runner can time his entrance
+      var settle = 1.5 + 0.2;   // landing + first idle beat
+      if (state === 'gone') return Math.max(0, 0.35 - st) + FALL_TIME + settle;
+      if (state === 'fall') return Math.max(0, FALL_TIME - st) + settle;
+      if (state === 'land') return Math.max(0, 1.5 - st) + 0.2;
+      if (state === 'launch') return Math.max(0, 0.72 - st) + 0.35 + FALL_TIME + settle;
+      if (state === 'idle') return this.ready() ? 0 : Math.max(0, 0.2 - it, 1.9 - downT);
+      return 99;
+    },
+    rect: function () { return mech.getBoundingClientRect(); },
+    spawn: function () { if (state === 'destroyed' || state === 'wait') { state = 'gone'; st = 1; return true; } return false; },
+    attackTime: function () { return SHOOT_LASER ? LASER_CHARGE : 0; },
+    attack: function (tx, ty) {           // charge, then fire a laser at (tx, ty); returns seconds until it fires
+      if (!SHOOT_LASER) return 0;
+      laser = { t: 0, tx: tx, ty: ty, fired: false };
+      return LASER_CHARGE;
+    },
+    engage: function () { if (!this.ready()) return false; fighting = true; return true; },
+    release: function () { fighting = false; },
+    hit: function (n) {
+      var r = mech.getBoundingClientRect(), hx = r.left + r.width * (n >= 2 ? 0.3 : 0.36), hy = r.top + r.height * (n >= 2 ? 0.33 : 0.4);
+      hitT = 0; hitN = n; laser = null; glowE = null; if (n >= 2) { downT = 0; doomed = true; popI = 0; }
+      for (var i = 0; i < 14 + 10 * n; i++) sparks.push({ x: hx, y: hy, vx: R(-150, 750), vy: R(-650, 250), t: 0 });
+      for (i = 0; i < 4 * n; i++) debris.push({ x: hx, y: hy, vx: R(80, 520), vy: -R(200, 560), a: R(0, 6.3), va: R(-16, 16),
+        r: R(2, 4.5), c: i % 2 ? C.aL : C.aD, pts: [[1, 0], [-0.6, 0.8], [-0.5, -0.9]], t: 0, b: 0 });
+      slashes.push({ x: hx, y: hy, t: 0, n: n });
+      shake = n >= 2 ? 0.35 : 0.2;
+      if (n >= 2) stackSmoke(10, 1.5, true, 1.4);
+    }
+  };
+  window.labEnemies = window.labEnemies || [];
+  window.labEnemies.push(enemy);
+
+  function emitter() { return bodyPt(70, 80); }   // left end of the sensor slit
+  function laserBlast(gx, big) {                   // purple plasma explosion where the beam hits the ground
+    var s = W / 200, m = big ? 1.6 : 0.8, i, n;
+    for (i = 0, n = Math.round(18 * m); i < n; i++) fire.push({ x: gx + R(-10, 10), y: GY - R(0, 12), vx: R(-230, 230) * m, vy: R(-420, -40) * m,
+      r: R(6, 12) * s * m, g: R(18, 42) * s * m, t: 0, life: R(0.5, 1.05), purple: i % 3 !== 0 });
+    for (i = 0, n = Math.round(30 * m); i < n; i++) sparks.push({ x: gx + R(-8, 8), y: GY - 2, vx: R(-650, 650), vy: -R(250, 950) * m, t: 0 });
+    for (i = 0, n = Math.round(10 * m); i < n; i++) debris.push({ x: gx, y: GY - 2, vx: R(-520, 520) * m, vy: -R(250, 820) * m, a: R(0, 6.3), va: R(-14, 14),
+      r: R(2.5, 6.5) * (0.6 + s * 0.45), c: ['#3f4d60', '#2a3442', '#5a6a80', '#1c2530'][i % 4], pts: poly(4 + (i % 2)), t: 0, b: 0, long: big });
+    puffs([gx], Math.round(10 * m), 300 * m);
+    rings.push({ t: 0, gx: gx, small: !big });
+    for (var c = 0; c < (big ? 5 : 2); c++) {
+      var dir = c % 2 ? -1 : 1, p = [gx + R(-8, 8), GY + 3], path = [p.slice()];
+      for (var k = 0; k < (big ? 6 : 3); k++) { p = [p[0] + dir * R(6, 15), Math.min(CH - 4, Math.max(GY + 3, p[1] + R(-2, 5)))]; path.push(p.slice()); }
+      cracks.push({ p: path, t: 0 });
+    }
+    scorches.push({ x: gx, t: 0, w: big ? 60 : 26 });
+    shake = Math.max(shake, big ? 0.45 : 0.2);
+  }
   function startY() { return -(GY + mech.clientHeight + 60); }   // [adapted] start just above the top of the window
-  function drop() { if (state === 'wait' || state === 'gone') { state = 'fall'; st = 0; mech.classList.remove('lm-clickable'); } }
-  function launch() { if (state === 'idle') { state = 'launch'; st = 0; mech.classList.remove('lm-clickable'); } }
-  window.labMechDrop = function () { if (state === 'idle') launch(); else drop(); };
-  mech.addEventListener('click', launch);
+  function drop() {
+    if (state === 'wait' || state === 'gone') {
+      state = 'fall'; st = 0; y = startY(); mech.classList.remove('lm-clickable');
+      mech.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0)'; mech.style.opacity = '1';
+    }
+  }
+  function launch() { if (state === 'idle' && !fighting && downT > 1.9) { state = 'launch'; st = 0; mech.classList.remove('lm-clickable'); } }
+  mech.addEventListener('click', launch);   // clicking the mech still makes it fly up and drop back in
 
   function frame(dt) {
     placeFloor();   // [adapted] follow the floor line as the page scrolls
     t += dt; st += dt; flareT += dt;
-    var P = STAND, sx = 1, sy = 1, shadowK = 0, streak = 0, flame = 0, engine = 0, claw = 0, drillOn = false;
+    var P = STAND, sx = 1, sy = 1, shadowK = 0, streak = 0, flame = 0, engine = 0, claw = 0, drillOn = false, sensorOff = false;
 
     if (state === 'fall') {
       var k = Math.min(1, st / FALL_TIME);
@@ -2483,6 +2890,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       }
     } else if (state === 'gone') {
       if (st > 0.35) drop();
+    } else if (state === 'destroyed') {
+      if (st < 5 && Math.random() < 0.5 * (1 - st / 5)) { var sc2 = W / 200; smoke.push({ x: cx + R(-25, 25) * sc2, y: GY - 10, vx: R(5, 25), vy: -R(50, 90), r: 6 * sc2, g: 34 * sc2, t: 0, life: R(2, 3), dark: true }); }
     }
     if (state === 'idle') {   // breathing, weight shift, and a little systems-check routine
       it += dt; bfT += dt;
@@ -2491,14 +2900,59 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       P.hip += 1 + 1.2 * br; P.bx = 2.5 * Math.sin(t * 0.9);
       P.LA = [8 + 2 * Math.sin(t * 1.8 + 0.6), -8 + 2 * Math.sin(t * 1.8 + 0.9)];
       P.RA = [8 + 2 * Math.sin(t * 1.8 + 0.6), -8 + 2 * Math.sin(t * 1.8 + 0.9)];
+      var busy = fighting || downT < 1.9;
+      if (busy) c = 7;                                                             // pause the routine during a fight
       var dr = c > 1 && c < 2.6 ? Math.sin(Math.PI * (c - 1) / 1.6) : 0;          // drill arm lifts and revs
       P.RA = [P.RA[0] + 48 * dr, P.RA[1] + 85 * dr]; drillOn = dr > 0.3;
       var cl = c > 4 && c < 5.8 ? Math.sin(Math.PI * (c - 4) / 1.8) : 0;          // claw arm lifts and snaps
       P.LA = [P.LA[0] + 34 * cl, P.LA[1] + 62 * cl]; claw = cl * (0.5 + 0.5 * Math.sin((c - 4) * 16));
       if ((c - dt) % 8 < 2.6 && c >= 2.6) hiss([joints.Rsh]);
       if ((c - dt) % 8 < 5.8 && c >= 5.8) hiss([joints.Lsh]);
-      if (it > nextBF) { bfT = 0; nextBF = it + R(4, 8); stackSmoke(6, 1.3, true, 1.1); }   // engine backfire
+      if (!busy && it > nextBF) { bfT = 0; nextBF = it + R(4, 8); stackSmoke(6, 1.3, true, 1.1); }   // engine backfire
       engine = 0.1 + 0.05 * Math.sin(t * 23) + (bfT < 0.45 ? 0.9 * Math.exp(-bfT * 7) : 0);
+
+      // laser: brace and charge, then fire at the runner, recoil
+      if (laser) {
+        laser.t += dt;
+        var lk = Math.min(1, laser.t / LASER_CHARGE), em = emitter();
+        if (!laser.fired) {
+          P.hip += 6 * lk; P.LA = [P.LA[0] + 10 * lk, P.LA[1]]; P.RA = [P.RA[0] + 10 * lk, P.RA[1]];
+          glowE = { x: em[0], y: em[1], k: lk };
+          tilt = R(-0.8, 0.8) * lk;
+          for (var ci = 0; ci < 5; ci++) { var ca = R(0, 6.283), cr = R(45, 95); charge.push({ x0: em[0] + Math.cos(ca) * cr, y0: em[1] + Math.sin(ca) * cr, t: 0, life: R(0.18, 0.3) }); }
+          engine = Math.max(engine, 0.25 * lk);
+          if (laser.t >= LASER_CHARGE) {
+            laser.fired = true;
+            var dxL = laser.tx - em[0], dyL = laser.ty - em[1], kL = dyL > 0 ? (GY - em[1]) / dyL : 4;
+            var B = [em[0] + dxL * kL, Math.min(GY, em[1] + dyL * kL)];
+            beams.push({ E: em, B: B, t: 0, sweep: (B[0] < em[0] ? -1 : 1) * 140, next: 0.11 }); laserBlast(B[0], true); flashP = 0.3;
+          }
+        } else {
+          var rk = Math.exp(-(laser.t - LASER_CHARGE) * 5);
+          P.bx += 11 * rk; P.hip += 4 * rk; tilt = 6 * rk;
+          glowE = laser.t < LASER_CHARGE + 0.6 ? { x: em[0], y: em[1], k: 1.4 * (1 - (laser.t - LASER_CHARGE) / 0.6) } : null;
+          if (laser.t > LASER_CHARGE + 0.62) { laser = null; glowE = null; }
+        }
+      }
+
+      // getting hit: shove + wobble; second hit knocks it down, sensor dies, then it overloads
+      hitT += dt; downT += dt;
+      if (hitT < 0.7) { var hk = Math.exp(-hitT * 6); P.bx += 7 * hitN * hk; tilt = (3 + 3 * hitN) * hk * Math.cos(hitT * 14); } else if (!laser) tilt = 0;
+      if (downT < 1.9) {
+        var dk = downT < 0.15 ? ease(downT / 0.15) : downT < 1.3 ? 1 : 1 - ease((downT - 1.3) / 0.6);
+        var DOWN = mix(STAND, CROUCH, 0.55); DOWN.LA = [22, 4]; DOWN.RA = [26, 6]; DOWN.bx = 6;
+        P = mix(P, DOWN, dk);
+        sensorOff = downT < 1.3 && Math.random() < 0.8;
+        engine = 0.05 + (Math.random() < 0.07 ? 0.8 : 0);
+        if (doomed) {                                  // overloading: violent shakes, shorts, engine spurts... then boom
+          sensorOff = Math.random() < 0.85;
+          tilt += R(-3, 3) * Math.min(1, downT * 2);
+          engine = Math.random() < 0.25 ? R(0.5, 1) : 0.1;
+          if (Math.random() < 0.3) { var rb = mech.getBoundingClientRect(); for (var si = 0; si < 6; si++) sparks.push({ x: rb.left + rb.width * R(0.25, 0.75), y: rb.top + rb.height * R(0.25, 0.65), vx: R(-400, 400), vy: R(-500, 100), t: 0 }); }
+          if (popI < 3 && downT >= [0.22, 0.42, 0.62][popI]) { popI++; miniBoom.apply(null, bodyPt(R(55, 145), R(55, 125)).concat([true])); shake = Math.max(shake, 0.18); }
+          if (downT >= 0.8) explode();
+        } else if (downT - dt < 1.3 && downT >= 1.3) { flareT = 0; hiss([joints.Lknee, joints.Rknee, joints.Lsh, joints.Rsh]); }
+      }
     }
 
     if (shake > 0) {
@@ -2507,14 +2961,18 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       layer.style.transform = cv.style.transform = 'translate(' + R(-amp, amp).toFixed(1) + 'px,' + R(-amp, amp).toFixed(1) + 'px)';
     } else layer.style.transform = cv.style.transform = '';
 
-    mech.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0) scale(' + sx.toFixed(3) + ',' + sy.toFixed(3) + ')';
+    if (state !== 'idle') tilt = 0;
+    if (state === 'destroyed' || state === 'wait') { fx(dt); draw(0); return; }
+    mech.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0) scale(' + sx.toFixed(3) + ',' + sy.toFixed(3) + ') rotate(' + tilt.toFixed(2) + 'deg)';
+    for (var li = 0; li < lensEls.length; li++) lensEls[li].setAttribute('opacity', sensorOff ? 0.1 : 1);
     pose(P);
     streaks.setAttribute('opacity', (streak * 0.7).toFixed(2));
     flames.setAttribute('opacity', flame);
     if (flame) for (var i = 0; i < flameEls.length; i++) flameEls[i].setAttribute('transform', 'translate(0,10) scale(1,' + R(0.75, 1.3).toFixed(2) + ') translate(0,-10)');
 
     // details: visor flare + sweeping scan light, drill spin, vent steam
-    E.flare.setAttribute('opacity', flareT < 0.8 ? (0.9 * (1 - flareT / 0.8)).toFixed(2) : 0);
+    E.flare.setAttribute('stroke', laser && !laser.fired ? '#b05cff' : C.teal);
+    E.flare.setAttribute('opacity', laser && !laser.fired ? (0.4 + 0.6 * Math.min(1, laser.t / LASER_CHARGE) * R(0.7, 1)).toFixed(2) : flareT < 0.8 ? (0.9 * (1 - flareT / 0.8)).toFixed(2) : 0);
     E.scan.setAttribute('x', f2(60 + ((t * 75) % 260)));
     E.status.setAttribute('opacity', Math.sin(t * 4) > 0 ? 1 : 0.25);
     var spin = drillOn;
@@ -2527,8 +2985,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     E.cfR.setAttribute('transform', 'rotate(' + f2(-28 * claw) + ' 9.5 25)');
     // steady exhaust smoke; thicker when the engines work harder
     if (state === 'idle' || state === 'land' || state === 'launch') {
-      smokeAcc += dt * (3 + 40 * engine);
-      while (smokeAcc > 1) { smokeAcc -= 1; stackSmoke(1, 0.8 + engine, engine > 0.5 || Math.random() < 0.5, 0.9 + engine); }
+      smokeAcc += dt * (2.2 + 40 * engine);
+      while (smokeAcc > 1) { smokeAcc -= 1; stackSmoke(1, 0.8 + engine, engine > 0.5 || Math.random() < 0.4, 0.65 + engine); }
     }
 
     fx(dt);
@@ -2548,12 +3006,14 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     requestAnimationFrame(loop);
   }
   btn.addEventListener('click', function () {
-    if (still) {   // reduced motion: the button just shows or hides a standing mech, no drop/shake/debris
+    if (still) {   // reduced motion: the button just shows or hides a standing mech, no drop/fight/debris
       if (state === 'idle') { state = 'wait'; mech.classList.remove('lm-clickable'); mech.style.transform = ''; }
       else { state = 'idle'; y = 0; placeFloor(); frame(0); mech.classList.remove('lm-clickable'); ctx.clearRect(0, 0, CW, CH); smoke = []; }
       return;
     }
-    window.labMechDrop();   // drops it in; if it's already standing, launches it and drops it again
+    // drop the mech in (only when none is on screen), and send the runner out to fight it
+    if (!enemy.spawn()) return;
+    if (window.labRunnerGo) window.labRunnerGo();
     if (!looping) { looping = true; requestAnimationFrame(loop); }
   });
 })();
