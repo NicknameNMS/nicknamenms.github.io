@@ -502,11 +502,26 @@ section{padding:88px 0 0}
 @media (max-width:600px){.lab-runner{width:80px;height:86px}}
 /* near-invisible trigger in the footer's bottom-left corner */
 footer{position:relative}
-.lr-btn{position:absolute;left:8px;bottom:8px;width:28px;height:28px;padding:0;border:0;background:none;cursor:pointer;opacity:.18;transition:opacity .3s}
-.lr-btn::before{content:"";display:block;width:7px;height:7px;margin:auto;border:1px solid var(--muted);border-radius:50%}
-.lr-btn:focus-visible{opacity:.9}
-.lr-btn:focus-visible::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}
-@media (hover:hover){.lr-btn:hover{opacity:.9}.lr-btn:hover::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}}
+.egg-btn{position:absolute;left:8px;bottom:8px;width:28px;height:28px;padding:0;border:0;background:none;cursor:pointer;opacity:.18;transition:opacity .3s}
+.egg-btn::before{content:"";display:block;width:7px;height:7px;margin:auto;border:1px solid var(--muted);border-radius:50%}
+.egg-btn.lm-btn{left:34px}
+.egg-btn.lm-btn::before{border-radius:1px}
+.egg-btn:focus-visible{opacity:.9}
+.egg-btn:focus-visible::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}
+@media (hover:hover){.egg-btn:hover{opacity:.9}.egg-btn:hover::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}}
+/* Lab Mech: drops onto the bench-bot floor line on demand (see labMech() script).
+   Stacking: top bar (10) > bot lane (9, robot + runner pass in front of the mech's legs) > mech layer (8); debris canvas (60) flies over all. */
+.botlane{z-index:9;pointer-events:none}
+.lab-mech-layer{position:fixed;left:0;right:0;bottom:0;height:100vh;pointer-events:none;overflow:hidden;z-index:8}
+.lab-mech-fx{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:60}
+.lab-mech{position:absolute;left:0;bottom:23px;width:250px;height:250px;transform-origin:50% 100%;will-change:transform;transform:translate3d(0,-200vh,0)}
+.lab-mech.lm-clickable{cursor:pointer}
+.lab-mech.lm-clickable svg *{pointer-events:visiblePainted}   /* only the drawn mech is clickable, not its empty box */
+.lab-mech.lm-clickable .lm-streaks *,.lab-mech.lm-clickable .lm-flames *{pointer-events:none}.lab-mech svg{display:block;width:100%;height:100%;overflow:visible}
+.lab-mech .lm-glow-o{filter:drop-shadow(0 0 3px rgba(255,154,46,.95))}
+.lab-mech .lm-glow-f{filter:drop-shadow(0 0 4px rgba(255,120,40,.95))}
+.lab-mech .lm-glow-t{filter:drop-shadow(0 0 4px rgba(63,240,214,.95))}
+@media (max-width:600px){.lab-mech{width:170px;height:170px}}
 
 /* ---------- hand calc: front end vs ADC noise ---------- */
 .nsd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
@@ -1321,9 +1336,12 @@ dialog .close:hover{border-color:var(--phosphor)}
   <div class="lab-runner"></div>
 </div>
 <footer>
-  <button type="button" class="lr-btn" aria-label="Send the lab runner past the robot" title="?"></button>
+  <button type="button" class="egg-btn lr-btn" aria-label="Send the lab runner past the robot" title="?"></button>
+  <button type="button" class="egg-btn lm-btn" aria-label="Drop in the lab mech" title="?"></button>
   <div class="wrap">© 2026 Nicholas Tipton · <span class="mono">KD9YXB</span> · 73</div>
 </footer>
+<div class="lab-mech-layer" aria-hidden="true"><div class="lab-mech"></div></div>
+<canvas class="lab-mech-fx" aria-hidden="true"></canvas>
 
 <template id="bench-svg">
   <figure class="schem-wrap bench-schem" aria-label="Passive sixth-order Chebyshev low-pass filter schematic">
@@ -2089,6 +2107,454 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     x = -root.clientWidth - 20;
     frame(0); root.classList.add('go');
     requestAnimationFrame(loop);
+  });
+})();
+
+/* ---------- Lab Mech: footer button drops a walker mech onto the bench-bot floor ---------- */
+/* Art, poses, and effects from LAB_MECH.md. Adapted: waits for the button instead of dropping on load,
+   and lands on the .botlane dashed floor line (tracked every frame) instead of its own ground strip. */
+(function labMech() {
+  // ---------------- settings ----------------
+  var POS_X = 0.78;        // where it lands: 0 = left edge, 1 = right edge
+  var FALL_TIME = 0.7;     // seconds to fall from the top of the screen
+  var FEET = 3;            // px the mech box sits below the floor line so its boots touch it
+  // ------------------------------------------
+
+  var layer = document.querySelector('.lab-mech-layer');
+  var lane = document.querySelector('.botlane');
+  var btn = document.querySelector('.lm-btn');
+  if (!layer || !lane || !btn) return;
+  var mech = layer.querySelector('.lab-mech'), cv = document.querySelector('.lab-mech-fx'), ctx = cv.getContext('2d');
+
+  var C = { ol: '#11161d', a: '#6b7f96', aS: '#566a81', aD: '#465569', aDD: '#2e3946', aL: '#9fb2c6', aLL: '#d3dde7',
+            inner: '#1d242e', teal: '#3ff0d6', tealD: '#1c8f80', org: '#2bb5a3', orgD: '#1c7d72', fire: '#ff7a2e', glass: '#0b1820' };
+
+  // ---- parts: limb segments are drawn pointing down +y from their joint ----
+  function piston(cls) {
+    return '<line class="lm-' + cls + 'r1" stroke="' + C.ol + '" stroke-width="6"/><line class="lm-' + cls + 'r2" stroke="' + C.aLL + '" stroke-width="2.5"/>' +
+           '<line class="lm-' + cls + 'c1" stroke="' + C.ol + '" stroke-width="10"/><line class="lm-' + cls + 'c2" stroke="' + C.aDD + '" stroke-width="5"/>';
+  }
+  function leg(s) {
+    return piston(s + 'lp') +
+      '<g class="lm-' + s + 'th">' +
+        '<path d="M-12 -4 L12 -4 L11 20 L-11 20 Z" fill="' + C.aD + '"/>' +
+        '<path d="M-4 1 L4 1 L4 13 L-4 13 Z" fill="' + C.inner + '" stroke="none"/>' +
+      '</g>' +
+      '<g class="lm-' + s + 'sh">' +
+        '<path d="M-12 0 L12 0 L15 22 L-15 22 Z" fill="' + C.a + '"/>' +
+        '<path d="M2 2 L12 2 L14.5 18 L2 18 Z" fill="' + C.aS + '" stroke="none"/>' +
+        '<path d="M-13 12 L13 12" stroke="' + C.org + '" stroke-width="3"/>' +
+        '<circle cx="0" cy="0" r="9.5" fill="' + C.aL + '"/><circle cx="0" cy="0" r="3" fill="' + C.aDD + '" stroke="none"/>' +
+      '</g>' +
+      '<g class="lm-' + s + 'bt">' +
+        '<path d="M-17 -6 L17 -6 L21 6 L-21 6 Z" fill="' + C.aDD + '"/>' +
+        '<path d="M-27 6 L-10 6 L-10 18 L-29 18 Z" fill="' + C.aD + '"/>' +
+        '<path d="M-8 6 L8 6 L8 18 L-8 18 Z" fill="' + C.a + '"/>' +
+        '<path d="M10 6 L27 6 L29 18 L10 18 Z" fill="' + C.aD + '"/>' +
+        '<path d="M-5 11 h10" stroke="' + C.org + '" stroke-width="2.5"/>' +
+      '</g>';
+  }
+  var claw =
+    '<rect x="-12" y="18" width="24" height="8" rx="2" fill="' + C.aDD + '"/>' +
+    '<g class="lm-cfL"><path d="M-12 25 L-16 38 L-10 45 L-7 39 L-7 26 Z" fill="' + C.aL + '"/></g>' +
+    '<path d="M-3 26 L-3 43 L0 47 L3 43 L3 26 Z" fill="' + C.aL + '"/>' +
+    '<g class="lm-cfR"><path d="M12 25 L16 38 L10 45 L7 39 L7 26 Z" fill="' + C.aL + '"/></g>';
+  var drill =
+    '<rect x="-12" y="18" width="24" height="7" rx="2" fill="' + C.aDD + '"/>' +
+    '<path d="M-11 25 L11 25 L0 54 Z" fill="' + C.aL + '"/>' +
+    '<g class="lm-spiral" stroke="' + C.aD + '" stroke-width="2.2"><path d="M-9 30 L7 33 M-6 38 L5 40 M-3 46 L2 47"/></g>' +
+    '<g class="lm-spiral2" stroke="' + C.aD + '" stroke-width="2.2" opacity="0"><path d="M-7 33 L9 30 M-5 40 L6 38 M-2 47 L3 46"/></g>';
+  function arm(s, tool) {
+    return piston(s + 'ap') +
+      '<g class="lm-' + s + 'ua">' +
+        '<path d="M-13 -2 L13 -2 L11 26 L-11 26 Z" fill="' + C.aD + '"/>' +
+        '<path d="M-5 4 L5 4 L5 20 L-5 20 Z" fill="' + C.inner + '" stroke="none"/>' +
+      '</g>' +
+      '<g class="lm-' + s + 'fa">' +
+        '<g transform="scale(1.3)">' + tool + '</g>' +
+        '<path d="M-16 -2 L16 -2 L18 23 L-18 23 Z" fill="' + C.a + '"/>' +
+        '<path d="M4 0 L15 0 L17 21 L4 21 Z" fill="' + C.aS + '" stroke="none"/>' +
+        '<path d="M-17 13 L17 13" stroke="' + C.org + '" stroke-width="4"/>' +
+        '<path d="M-9 4 v5 M-4 4 v5" stroke="' + C.aDD + '" stroke-width="2"/>' +
+        '<circle cx="0" cy="0" r="11" fill="' + C.aL + '"/><circle cx="0" cy="0" r="3.5" fill="' + C.aDD + '" stroke="none"/>' +
+      '</g>';
+  }
+  var shoulderPlate =
+    '<circle cx="0" cy="0" r="12" fill="' + C.aD + '"/>' +
+    '<path d="M-24 4 L-18 -14 L6 -20 L22 -12 L20 8 L-20 12 Z" fill="' + C.a + '"/>' +
+    '<path d="M6 -20 L22 -12 L20 8 L4 10 Z" fill="' + C.aS + '" stroke="none"/>' +
+    '<path d="M-21 6 L19 2" stroke="' + C.org + '" stroke-width="4"/>' +
+    '<path d="M-17 -10 L4 -16" stroke="' + C.aLL + '" stroke-width="3"/>' +
+    '<circle cx="-10" cy="-4" r="1.8" fill="' + C.aDD + '" stroke="none"/><circle cx="8" cy="-6" r="1.8" fill="' + C.aDD + '" stroke="none"/>';
+  function actuator(x) {
+    return '<g class="lm-' + (x > 100 ? 'R' : 'L') + 'pl">' + shoulderPlate + '</g>';
+  }
+
+  var body =
+    '<g class="lm-body">' +
+      // exhaust vents behind the hull
+      '<path d="M64 50 L57 26 L70 24 L74 48 Z" fill="' + C.aDD + '"/><path d="M136 50 L143 26 L130 24 L126 48 Z" fill="' + C.aDD + '"/>' +
+      '<path d="M57.5 30 L70.5 28 M142.5 30 L129.5 28" stroke="' + C.aD + '" stroke-width="3"/>' +
+      '<g class="lm-cfire" opacity="0">' +
+        '<g transform="translate(63.5,25) rotate(-13)"><g class="lm-chL">' +
+          '<path class="lm-glow-f" d="M-6.5 1 Q-6 -12 0 -36 Q6 -12 6.5 1 Z" fill="' + C.fire + '" stroke-width="2"/>' +
+          '<path d="M-3 1 Q-1 -12 0 -20 Q1 -12 3 1 Z" fill="#d9fbff" stroke="none"/></g></g>' +
+        '<g transform="translate(136.5,25) rotate(13)"><g class="lm-chR">' +
+          '<path class="lm-glow-f" d="M-6.5 1 Q-6 -12 0 -36 Q6 -12 6.5 1 Z" fill="' + C.fire + '" stroke-width="2"/>' +
+          '<path d="M-3 1 Q-1 -12 0 -20 Q1 -12 3 1 Z" fill="#d9fbff" stroke="none"/></g></g>' +
+      '</g>' +
+      '<circle class="lm-steam1" cx="62" cy="22" r="3" fill="#b8c6d4" stroke="none" opacity="0"/>' +
+      '<circle class="lm-steam2" cx="138" cy="22" r="3" fill="#b8c6d4" stroke="none" opacity="0"/>' +
+      // pelvis
+      '<path d="M74 136 L126 136 L120 156 L80 156 Z" fill="' + C.aDD + '"/>' +
+      // hull
+      '<g transform="translate(100,100) scale(0.88) translate(-100,-100)">' +
+      '<path d="M42 58 L60 36 L140 36 L158 58 L150 106 L130 142 L70 142 L50 106 Z" fill="' + C.a + '"/>' +
+      '<path d="M100 36 L140 36 L158 58 L150 106 L130 142 L100 142 Z" fill="' + C.aS + '" stroke="none"/>' +
+      '<path d="M47 58 L62 41 L98 41" stroke="' + C.aLL + '" stroke-width="3.5" fill="none"/>' +
+      '<path d="M64 46 L62 106 M136 46 L138 106 M50 106 L150 106" stroke="' + C.aD + '" stroke-width="2.5"/>' +
+      '<path d="M86 96 L114 96 L111 132 L89 132 Z" fill="' + C.aD + '"/>' +
+      '<path d="M100 98 L100 130" stroke="' + C.aDD + '" stroke-width="2"/>' +
+      '<circle cx="91" cy="101" r="1.8" fill="' + C.aL + '" stroke="none"/><circle cx="109" cy="101" r="1.8" fill="' + C.aL + '" stroke="none"/>' +
+      '<circle cx="93" cy="127" r="1.8" fill="' + C.aL + '" stroke="none"/><circle cx="107" cy="127" r="1.8" fill="' + C.aL + '" stroke="none"/>' +
+      '<rect x="64" y="98" width="14" height="17" rx="2" fill="' + C.aDD + '"/>' +
+      '<path d="M66 103 h10 M66 107 h10 M66 111 h10" stroke="' + C.aD + '" stroke-width="2"/>' +
+      '<rect x="121" y="97" width="15" height="12" rx="2" fill="' + C.aS + '"/>' +
+      '<circle class="lm-glow-t lm-status" cx="128.5" cy="103" r="2.2" fill="' + C.teal + '" stroke="none"/>' +
+      // sensor slit
+      '<path d="M56 67 L144 67 L140 87 L60 87 Z" fill="' + C.aDD + '"/>' +
+      '<path class="lm-glow-t" d="M62 72 L138 72 L135 82 L65 82 Z" fill="' + C.tealD + '" stroke="none"/>' +
+      '<g clip-path="url(#lm-visor-clip)" stroke="none">' +
+        '<rect x="60" y="75" width="80" height="3" fill="' + C.teal + '" opacity=".8"/>' +
+        '<rect class="lm-scan" x="-40" y="60" width="12" height="40" fill="#e9fffb" opacity=".55" transform="skewX(-22)"/>' +
+      '</g>' +
+      '<circle class="lm-glow-t" cx="118" cy="77" r="2.6" fill="#e9fffb" stroke="none"/><circle cx="125" cy="77" r="1.8" fill="' + C.teal + '" stroke="none"/>' +
+      '<path class="lm-flare" d="M62 72 L138 72 L135 82 L65 82 Z" fill="none" stroke="' + C.teal + '" stroke-width="6" opacity="0"/>' +
+      '<path d="M62 72 L138 72 L135 82 L65 82 Z" fill="none" stroke="' + C.ol + '" stroke-width="2.5"/>' +
+      '<path d="M47 58 L153 58" stroke="' + C.aD + '" stroke-width="3"/>' +
+      '<circle cx="56" cy="50" r="1.8" fill="' + C.aDD + '" stroke="none"/><circle cx="144" cy="50" r="1.8" fill="' + C.aDD + '" stroke="none"/>' +
+      '</g>' +
+      // hip actuators
+      '<circle cx="80" cy="150" r="8" fill="' + C.aD + '"/><circle cx="120" cy="150" r="8" fill="' + C.aD + '"/>' +
+    '</g>';
+
+  mech.innerHTML =
+    '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">' +
+      '<defs><clipPath id="lm-visor-clip"><path d="M62 72 L138 72 L135 82 L65 82 Z"/></clipPath></defs>' +
+      '<g class="lm-streaks" stroke="' + C.aLL + '" stroke-linecap="round" opacity="0">' +
+        '<line x1="50" y1="-140" x2="50" y2="50" stroke-width="2.5"/><line x1="82" y1="-180" x2="82" y2="30" stroke-width="2"/>' +
+        '<line x1="118" y1="-160" x2="118" y2="30" stroke-width="2"/><line x1="150" y1="-130" x2="150" y2="50" stroke-width="2.5"/>' +
+      '</g>' +
+      '<g class="lm-flames" opacity="0">' +
+        '<g class="lm-Lfl"><path class="lm-flame" d="M-14 18 Q0 80 14 18 Z" fill="' + C.fire + '"/><path class="lm-flame" d="M-7 18 Q0 50 7 18 Z" fill="#fff1d0"/></g>' +
+        '<g class="lm-Rfl"><path class="lm-flame" d="M-14 18 Q0 80 14 18 Z" fill="' + C.fire + '"/><path class="lm-flame" d="M-7 18 Q0 50 7 18 Z" fill="#fff1d0"/></g>' +
+      '</g>' +
+      '<g stroke="' + C.ol + '" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' +
+        leg('L') + leg('R') + body + arm('L', claw) + arm('R', drill) +
+        '<g class="lm-shoulders">' + actuator(37) + actuator(163) + '</g>' +
+      '</g>' +
+    '</svg>';
+
+  var q = function (s) { return mech.querySelector(s); };
+  var E = {};
+  ['Lth','Lsh','Lbt','Rth','Rsh','Rbt','Lua','Lfa','Rua','Rfa','Lfl','Rfl','body','shoulders','scan','flare','spiral','spiral2','status','cfL','cfR','Lpl','Rpl','cfire','chL','chR'].forEach(function (k) { E[k] = q('.lm-' + k); });
+  var streaks = q('.lm-streaks'), flames = q('.lm-flames'), flameEls = mech.querySelectorAll('.lm-flame');
+
+  var D = 180 / Math.PI, HB = 146, LIFT = 10;   // HB = hull bottom line
+  function f2(n) { return n.toFixed(2); }
+  function seg(el, p, qq) {
+    var ang = Math.atan2(qq[1] - p[1], qq[0] - p[0]) * D - 90;
+    el.setAttribute('transform', 'translate(' + f2(p[0]) + ',' + f2(p[1]) + ') rotate(' + f2(ang) + ')');
+  }
+  function line2(cls, p, qq) {
+    [q('.lm-' + cls + '1'), q('.lm-' + cls + '2')].forEach(function (el) {
+      el.setAttribute('x1', f2(p[0])); el.setAttribute('y1', f2(p[1])); el.setAttribute('x2', f2(qq[0])); el.setAttribute('y2', f2(qq[1]));
+    });
+  }
+  function piston2(cls, A, B) {   // rod spans A->B, cylinder covers the first 55%
+    line2(cls + 'r', A, B); line2(cls + 'c', A, lerp(A, B, 0.55));
+  }
+  function lerp(a, b, k) { return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; }
+  function ik(h, a, L1, L2, dir) {   // two-bone solve; middle joint pushed outward
+    var dx = a[0] - h[0], dy = a[1] - h[1], d = Math.max(Math.abs(L1 - L2) + 0.1, Math.min(Math.hypot(dx, dy), L1 + L2 - 0.01));
+    var phi = Math.atan2(dy, dx), al = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
+    var k1 = [h[0] + L1 * Math.cos(phi + al), h[1] + L1 * Math.sin(phi + al)],
+        k2 = [h[0] + L1 * Math.cos(phi - al), h[1] + L1 * Math.sin(phi - al)];
+    return (dir < 0) === (k1[0] < k2[0]) ? k1 : k2;
+  }
+  function mix(A, B, k) {
+    var o = {};
+    for (var key in A) o[key] = Array.isArray(A[key]) ? A[key].map(function (v, i) { return v + (B[key][i] - v) * k; }) : A[key] + (B[key] - A[key]) * k;
+    return o;
+  }
+  function ease(k) { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); }
+
+  // ---- key poses ----
+  var STAND  = { hip: 0,  sq: 1,    aL: [62, 178], aR: [138, 178], LA: [8, -8], RA: [8, -8] };
+  var FALL   = { hip: -3, sq: 1,    aL: [68, 170], aR: [132, 170], LA: [44, 26], RA: [44, 26] };
+  var CROUCH = { hip: 20, sq: 0.9,  aL: [58, 178], aR: [142, 178], LA: [26, 16], RA: [30, 26] };
+
+  var lastP = null, joints = {};
+  function pose(P) {
+    var bx = P.bx || 0; lastP = P;
+    E.body.setAttribute('transform', 'translate(' + f2(bx) + ',' + f2(P.hip - LIFT) + ') translate(0,' + HB + ') scale(1,' + f2(P.sq) + ') translate(0,' + (-HB) + ')');
+    var shY = HB + P.hip - LIFT + (90 - HB) * P.sq;
+    [['L', -1, P.aL, P.LA], ['R', 1, P.aR, P.RA]].forEach(function (S) {
+      var s = S[0], dir = S[1], an = S[2], A = S[3];
+      var h = [100 + bx + dir * 20, 150 + P.hip - LIFT], k = ik(h, an, 20, 22, dir); joints[s + 'knee'] = k;
+      seg(E[s + 'th'], h, k); seg(E[s + 'sh'], k, an);
+      piston2(s + 'lp', [h[0] + dir * 11, h[1] - 2], [lerp(k, an, 0.7)[0] + dir * 11, lerp(k, an, 0.7)[1]]);
+      E[s + 'bt'].setAttribute('transform', 'translate(' + f2(an[0]) + ',' + f2(an[1]) + ')');
+      E[s + 'fl'].setAttribute('transform', 'translate(' + f2(an[0]) + ',' + f2(an[1]) + ')');
+      var sh = [100 + bx + dir * 63, shY], u = A[0] / D, f = A[1] / D; joints[s + 'sh'] = sh;
+      E[s + 'pl'].setAttribute('transform', 'translate(' + f2(sh[0]) + ',' + f2(shY - 6) + ')' + (dir > 0 ? ' scale(-1,1)' : '') + ' scale(1.4) rotate(' + f2(0.3 * (A[0] - 8)) + ')');
+      var el = [sh[0] + dir * 26 * Math.sin(u), sh[1] + 26 * Math.cos(u)];
+      var wr = [el[0] + dir * 20 * Math.sin(f), el[1] + 20 * Math.cos(f)];
+      seg(E[s + 'ua'], sh, el); seg(E[s + 'fa'], el, wr);
+      piston2(s + 'ap', [sh[0] + dir * 13, sh[1] + 6], [lerp(el, wr, 0.45)[0] + dir * 13, lerp(el, wr, 0.45)[1]]);
+    });
+  }
+
+  // ---------------- effects canvas ----------------
+  var CH = 400, CW = 0, GY = CH - 28, W = 260, cx = 0;
+  var debris = [], sparks = [], dust = [], rings = [], cracks = [], smoke = [], flash = 0, shake = 0;
+  function placeFloor() {   // [adapted] stand on the bench-bot lane's dashed floor line, wherever it is on screen
+    GY = lane.getBoundingClientRect().bottom - 7;
+    mech.style.bottom = (layer.getBoundingClientRect().bottom - GY - FEET).toFixed(1) + 'px';
+  }
+  function layout() {
+    var dpr = window.devicePixelRatio || 1;
+    CW = cv.clientWidth; CH = cv.clientHeight;
+    cv.width = CW * dpr; cv.height = CH * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = mech.clientWidth; cx = Math.round(layer.clientWidth * POS_X);
+    mech.style.left = (cx - W / 2) + 'px';
+    placeFloor();
+  }
+  function R(a, b) { return a + Math.random() * (b - a); }
+  function puffs(xs, n, spread) {
+    for (var i = 0; i < n; i++) {
+      var side = i % 2 ? -1 : 1;
+      dust.push({ x: xs[i % xs.length] + R(-10, 10), y: GY - R(2, 10), vx: side * R(40, spread), vy: -R(5, 45), r: R(5, 11), t: 0 });
+    }
+  }
+  function toScreen(p) {   // mech SVG coords -> screen px
+    var r = mech.getBoundingClientRect(), sc = r.width / 200;
+    return [r.left + p[0] * sc, r.top + p[1] * sc];
+  }
+  function bodyPt(x, y) {   // a point on the hull, following the current pose
+    var P = lastP || STAND;
+    return toScreen([x + (P.bx || 0), (y - HB) * P.sq + HB + P.hip - LIFT]);
+  }
+  function puffSmoke(p, dir, n, power, dark, size) {
+    var sc = W / 200;
+    for (var i = 0; i < n; i++) smoke.push({ x: p[0] + R(-3, 3), y: p[1] + R(-3, 3),
+      vx: dir * R(8, 30) * power + R(0, 12), vy: -R(35, 85) * power, r: R(3, 6) * sc * size, g: R(14, 28) * sc * size,
+      t: 0, life: R(1.6, 2.8), dark: dark });
+  }
+  function stackSmoke(n, power, dark, size) {
+    puffSmoke(bodyPt(63.5 - 8 * 0.23, 25 - 8), -1, n, power, dark, size);
+    puffSmoke(bodyPt(136.5 + 8 * 0.23, 25 - 8), 1, n, power, dark, size);
+  }
+  function hiss(pts) {   // little white hydraulic puffs at joints
+    pts.forEach(function (p) { var sp = toScreen([p[0] + 0, p[1]]); puffSmoke(sp, p[0] < 100 ? -1 : 1, 3, 0.6, false, 0.6); });
+  }
+  function impact() {
+    var s = W / 200, pts = [cx - 38 * s, cx + 38 * s, cx - 91 * s, cx + 105 * s], cols = ['#3f4d60', '#2a3442', '#5a6a80', '#1c2530', '#4a3a2a'];
+    for (var i = 0; i < 48; i++) {
+      var side = i % 2 ? -1 : 1, n = 4 + (i % 2), poly = [];
+      for (var j = 0; j < n; j++) { var an = j / n * 6.283, rr = R(0.6, 1); poly.push([Math.cos(an) * rr, Math.sin(an) * rr]); }
+      debris.push({ x: pts[i % 4] + R(-10, 10) * s, y: GY - 2, vx: side * R(80, 950), vy: -R(300, 1150),
+                    a: R(0, 6.3), va: R(-14, 14), r: R(2.5, 8) * (i % 6 ? 1 : 1.8) * (0.6 + s * 0.45), c: cols[i % cols.length], pts: poly, t: 0, b: 0 });
+    }
+    for (i = 0; i < 30; i++) {
+      side = i % 2 ? -1 : 1;
+      sparks.push({ x: pts[i % 4] + R(-8, 8), y: GY - 3, vx: side * R(150, 900), vy: -R(200, 950), t: 0 });
+    }
+    puffs(pts, 26, 420);
+    rings.push({ t: 0 });
+    pts.forEach(function (fx, fi) {
+      for (var c = 0; c < 3; c++) {
+        var dir = c === 0 ? -1 : c === 2 ? 1 : (fi % 2 === 0 ? -1 : 1), p = [fx + R(-8, 8) * s, GY + 3], path = [p.slice()];
+        for (var k = 0; k < 6; k++) { p = [p[0] + dir * R(6, 16), Math.min(CH - 4, Math.max(GY + 3, p[1] + R(-2, 5)))]; path.push(p.slice()); }
+        cracks.push({ p: path, t: 0 });
+      }
+    });
+    flash = 0.2; shake = 0.45;
+  }
+  function fx(dt) {
+    var G = 1500;
+    debris = debris.filter(function (d) {
+      d.t += dt; d.vy += G * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.a += d.va * dt;
+      if (d.y > GY - d.r * 0.5 && d.vy > 0) { d.y = GY - d.r * 0.5; d.vy *= -0.32; d.vx *= 0.55; d.va *= 0.5; d.b++; if (d.b > 2) d.vy = 0; }
+      return d.t < 3.4 && d.x > -60 && d.x < CW + 60;
+    });
+    sparks = sparks.filter(function (p) { p.t += dt; p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; return p.t < 0.55 && p.y < GY + 2; });
+    dust = dust.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.pow(0.12, dt); return p.t < 1.4; });
+    rings = rings.filter(function (r) { r.t += dt; return r.t < 0.55; });
+    smoke = smoke.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy *= Math.pow(0.55, dt); p.vx += 14 * dt; return p.t < p.life; });
+    cracks = cracks.filter(function (c) { c.t += dt; return c.t < 7; });
+    flash = Math.max(0, flash - dt);
+  }
+  function draw(shadowK) {
+    ctx.clearRect(0, 0, CW, CH);
+    smoke.forEach(function (p) {
+      var k = p.t / p.life, a = (p.dark ? 0.5 : 0.45) * (1 - k) * Math.min(1, p.t * 8);
+      ctx.fillStyle = (p.dark ? 'rgba(38,45,56,' : 'rgba(170,182,198,') + a.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + p.g * Math.sqrt(k), 0, 6.283); ctx.fill();
+    });
+    if (shadowK > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,' + (0.12 + 0.38 * shadowK) + ')';
+      ctx.beginPath(); ctx.ellipse(cx, GY + 1, W * (0.12 + 0.34 * shadowK), 3 + 5 * shadowK, 0, 0, 6.283); ctx.fill();
+    }
+    cracks.forEach(function (c) {
+      var a = c.t > 5.5 ? 1 - (c.t - 5.5) / 1.5 : 1;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      [['rgba(80,96,118,' + a + ')', 1.2, 1.2], ['rgba(8,12,17,' + a + ')', 2.4, 0]].forEach(function (st) {
+        ctx.strokeStyle = st[0]; ctx.lineWidth = st[1]; ctx.beginPath();
+        c.p.forEach(function (p, i) { ctx[i ? 'lineTo' : 'moveTo'](p[0], p[1] + st[2]); });
+        ctx.stroke();
+      });
+    });
+    rings.forEach(function (r) {
+      var k = r.t / 0.55;
+      ctx.strokeStyle = 'rgba(210,225,240,' + (0.6 * (1 - k)) + ')'; ctx.lineWidth = 3 * (1 - k) + 1;
+      ctx.beginPath(); ctx.ellipse(cx, GY + 1, 20 + 300 * k, 4 + 18 * k, 0, 0, 6.283); ctx.stroke();
+    });
+    dust.forEach(function (p) {
+      var k = p.t / 1.4;
+      ctx.fillStyle = 'rgba(150,165,185,' + (0.45 * (1 - k)) + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 24 * k, 0, 6.283); ctx.fill();
+    });
+    debris.forEach(function (d) {
+      var al = d.t > 2.8 ? 1 - (d.t - 2.8) / 0.6 : 1;
+      ctx.save(); ctx.globalAlpha = Math.max(0, al); ctx.translate(d.x, d.y); ctx.rotate(d.a);
+      ctx.fillStyle = d.c; ctx.strokeStyle = '#0f151d'; ctx.lineWidth = 1.5; ctx.beginPath();
+      d.pts.forEach(function (p, i) { ctx[i ? 'lineTo' : 'moveTo'](p[0] * d.r, p[1] * d.r); });
+      ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    });
+    ctx.save(); ctx.shadowColor = '#ff9a2e'; ctx.shadowBlur = 6; ctx.lineCap = 'round';
+    sparks.forEach(function (p) {
+      ctx.strokeStyle = 'rgba(255,200,120,' + (1 - p.t / 0.55) + ')'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
+    });
+    ctx.restore();
+    if (flash > 0) {
+      var g = ctx.createRadialGradient(cx, GY - 20, 0, cx, GY - 20, W * 0.8);
+      g.addColorStop(0, 'rgba(255,240,210,' + (flash / 0.2 * 0.55) + ')'); g.addColorStop(1, 'rgba(255,240,210,0)');
+      ctx.fillStyle = g; ctx.fillRect(cx - W, GY - 20 - W, W * 2, W * 2);
+    }
+  }
+
+  // ---------------- state machine ----------------
+  var state = 'wait', st = 0, t = 0, y = -99999, last = null, flareT = 9, it = 0, nextBF = 5, bfT = 9, smokeAcc = 0;
+  function startY() { return -(GY + mech.clientHeight + 60); }   // [adapted] start just above the top of the window
+  function drop() { if (state === 'wait' || state === 'gone') { state = 'fall'; st = 0; mech.classList.remove('lm-clickable'); } }
+  function launch() { if (state === 'idle') { state = 'launch'; st = 0; mech.classList.remove('lm-clickable'); } }
+  window.labMechDrop = function () { if (state === 'idle') launch(); else drop(); };
+  mech.addEventListener('click', launch);
+
+  function frame(dt) {
+    placeFloor();   // [adapted] follow the floor line as the page scrolls
+    t += dt; st += dt; flareT += dt;
+    var P = STAND, sx = 1, sy = 1, shadowK = 0, streak = 0, flame = 0, engine = 0, claw = 0, drillOn = false;
+
+    if (state === 'fall') {
+      var k = Math.min(1, st / FALL_TIME);
+      y = startY() * (1 - k * k); P = FALL; streak = k; shadowK = k * k;
+      if (k >= 1) { y = 0; state = 'land'; st = 0; impact(); setTimeout(function () { stackSmoke(10, 1.6, true, 1.4); }, 30); }
+    } else if (state === 'land') {
+      if (st < 0.07) P = mix(FALL, CROUCH, ease(st / 0.07));
+      else if (st < 0.85) { P = mix(CROUCH, CROUCH, 0); P.hip += 4 * Math.exp(-(st - 0.07) * 9) * Math.cos((st - 0.07) * 18); }
+      else if (st < 1.5) P = mix(CROUCH, STAND, ease((st - 0.85) / 0.65));
+      else { state = 'idle'; st = 0; it = 0; flareT = 0; nextBF = 3; mech.classList.add('lm-clickable'); hiss([joints.Lknee, joints.Rknee]); }
+      engine = st < 0.4 ? 0.9 * Math.exp(-st * 6) : (st > 0.85 && st < 1.5 ? 0.35 + 0.15 * Math.sin(st * 30) : 0.05);
+      drillOn = st > 0.9;
+      var imp = Math.exp(-st * 14); sx = 1 + 0.04 * imp; sy = 1 - 0.06 * imp;
+    } else if (state === 'launch') {
+      engine = st < 0.22 ? 0.5 * st / 0.22 : 1;
+      if (st < 0.22) P = mix(STAND, CROUCH, 0.45 * ease(st / 0.22));
+      else {
+        var k2 = (st - 0.22) / 0.5; flame = 1;
+        if (st - dt < 0.22) { var s = W / 200; puffs([cx - 38 * s, cx + 38 * s], 14, 220); }
+        P = mix(mix(STAND, CROUCH, 0.45), FALL, ease(k2 * 2));
+        y = startY() * k2 * k2;
+        if (k2 >= 1) { state = 'gone'; st = 0; }
+      }
+    } else if (state === 'gone') {
+      if (st > 0.35) drop();
+    }
+    if (state === 'idle') {   // breathing, weight shift, and a little systems-check routine
+      it += dt; bfT += dt;
+      var c = it % 8, br = Math.sin(t * 1.8);
+      P = mix(STAND, STAND, 0);
+      P.hip += 1 + 1.2 * br; P.bx = 2.5 * Math.sin(t * 0.9);
+      P.LA = [8 + 2 * Math.sin(t * 1.8 + 0.6), -8 + 2 * Math.sin(t * 1.8 + 0.9)];
+      P.RA = [8 + 2 * Math.sin(t * 1.8 + 0.6), -8 + 2 * Math.sin(t * 1.8 + 0.9)];
+      var dr = c > 1 && c < 2.6 ? Math.sin(Math.PI * (c - 1) / 1.6) : 0;          // drill arm lifts and revs
+      P.RA = [P.RA[0] + 48 * dr, P.RA[1] + 85 * dr]; drillOn = dr > 0.3;
+      var cl = c > 4 && c < 5.8 ? Math.sin(Math.PI * (c - 4) / 1.8) : 0;          // claw arm lifts and snaps
+      P.LA = [P.LA[0] + 34 * cl, P.LA[1] + 62 * cl]; claw = cl * (0.5 + 0.5 * Math.sin((c - 4) * 16));
+      if ((c - dt) % 8 < 2.6 && c >= 2.6) hiss([joints.Rsh]);
+      if ((c - dt) % 8 < 5.8 && c >= 5.8) hiss([joints.Lsh]);
+      if (it > nextBF) { bfT = 0; nextBF = it + R(4, 8); stackSmoke(6, 1.3, true, 1.1); }   // engine backfire
+      engine = 0.1 + 0.05 * Math.sin(t * 23) + (bfT < 0.45 ? 0.9 * Math.exp(-bfT * 7) : 0);
+    }
+
+    if (shake > 0) {
+      shake = Math.max(0, shake - dt);
+      var amp = 8 * (shake / 0.45);
+      layer.style.transform = cv.style.transform = 'translate(' + R(-amp, amp).toFixed(1) + 'px,' + R(-amp, amp).toFixed(1) + 'px)';
+    } else layer.style.transform = cv.style.transform = '';
+
+    mech.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0) scale(' + sx.toFixed(3) + ',' + sy.toFixed(3) + ')';
+    pose(P);
+    streaks.setAttribute('opacity', (streak * 0.7).toFixed(2));
+    flames.setAttribute('opacity', flame);
+    if (flame) for (var i = 0; i < flameEls.length; i++) flameEls[i].setAttribute('transform', 'translate(0,10) scale(1,' + R(0.75, 1.3).toFixed(2) + ') translate(0,-10)');
+
+    // details: visor flare + sweeping scan light, drill spin, vent steam
+    E.flare.setAttribute('opacity', flareT < 0.8 ? (0.9 * (1 - flareT / 0.8)).toFixed(2) : 0);
+    E.scan.setAttribute('x', f2(60 + ((t * 75) % 260)));
+    E.status.setAttribute('opacity', Math.sin(t * 4) > 0 ? 1 : 0.25);
+    var spin = drillOn;
+    var ph = spin ? Math.floor(t / 0.05) % 2 : 0;
+    E.spiral.setAttribute('opacity', ph ? 0 : 1); E.spiral2.setAttribute('opacity', ph ? 1 : 0);
+    E.cfire.setAttribute('opacity', engine > 0.03 ? 1 : 0);
+    E.chL.setAttribute('transform', 'scale(' + f2(0.8 + 0.3 * engine) + ',' + f2(engine * R(0.7, 1.25)) + ')');
+    E.chR.setAttribute('transform', 'scale(' + f2(0.8 + 0.3 * engine) + ',' + f2(engine * R(0.7, 1.25)) + ')');
+    E.cfL.setAttribute('transform', 'rotate(' + f2(28 * claw) + ' -9.5 25)');
+    E.cfR.setAttribute('transform', 'rotate(' + f2(-28 * claw) + ' 9.5 25)');
+    // steady exhaust smoke; thicker when the engines work harder
+    if (state === 'idle' || state === 'land' || state === 'launch') {
+      smokeAcc += dt * (3 + 40 * engine);
+      while (smokeAcc > 1) { smokeAcc -= 1; stackSmoke(1, 0.8 + engine, engine > 0.5 || Math.random() < 0.5, 0.9 + engine); }
+    }
+
+    fx(dt);
+    draw(shadowK);
+  }
+
+  layout();
+  window.addEventListener('resize', layout);
+
+  // [adapted] nothing runs until the footer button is pressed
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var looping = false;
+  if (still) window.addEventListener('scroll', function () { if (state === 'idle') placeFloor(); }, { passive: true });
+  function loop(now) {
+    var dt = last == null ? 0 : Math.min(0.05, (now - last) / 1000);
+    last = now; frame(dt);
+    requestAnimationFrame(loop);
+  }
+  btn.addEventListener('click', function () {
+    if (still) {   // reduced motion: the button just shows or hides a standing mech, no drop/shake/debris
+      if (state === 'idle') { state = 'wait'; mech.classList.remove('lm-clickable'); mech.style.transform = ''; }
+      else { state = 'idle'; y = 0; placeFloor(); frame(0); mech.classList.remove('lm-clickable'); ctx.clearRect(0, 0, CW, CH); smoke = []; }
+      return;
+    }
+    window.labMechDrop();   // drops it in; if it's already standing, launches it and drops it again
+    if (!looping) { looping = true; requestAnimationFrame(loop); }
   });
 })();
 </script>
