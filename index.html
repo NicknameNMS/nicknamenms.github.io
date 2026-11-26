@@ -501,6 +501,7 @@ section{padding:88px 0 0}
 .lab-runner svg{display:block;width:100%;height:100%;overflow:visible}
 .lab-runner .lr-glow-o{filter:drop-shadow(0 0 3px rgba(255,154,46,.95))}
 .lab-runner .lr-glow-t{filter:drop-shadow(0 0 3px rgba(63,240,214,.95))}
+.lab-runner .lr-glow-r{filter:drop-shadow(0 0 2px rgba(255,74,58,.95))}
 @media (max-width:600px){.lab-runner{width:80px;height:86px}}
 /* near-invisible trigger in the footer's bottom-left corner */
 footer{position:relative}
@@ -1875,7 +1876,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
 })();
 
 /* ---------- Lab Runner: sprints in to fight the Lab Mech whenever it's dropped in ---------- */
-/* Character art, run cycle, and fight from the lab-fight demo. Adapted: hidden until the mech is
+/* Character art from lab_runner_mars_v2_gear (oxygen pack, shoulder camera, tool belt); run cycle and
+   fight from the lab-fight demo. Adapted: hidden until the mech is
    spawned (window.labRunnerGo), runs once, and stands on the .botlane floor line like the mech. */
 (function labRunner() {
   var FIGHT_ENEMIES = true;     // run out and attack any enemy registered in window.labEnemies
@@ -1885,41 +1887,33 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   var layer = document.querySelector('.lab-mech-layer');
   if (!root || !lane || !layer) return;
 
-  // ---- palette: site teal + orange, with leather and cloth ----
-  var C = {
-    ol: '#121820',
-    cloth: '#3d4859', clothD: '#2b3441',
-    lea: '#86552f', leaD: '#5c3a20', leaDD: '#3f2814', leaL: '#b07842',
-    wrap: '#a3825c', wrapD: '#7a5f42', wrapDD: '#5e4732',
-    tun: '#23847a', tunD: '#185f58',
-    metal: '#8798ad', metalD: '#5f6f84', metalL: '#c3cfdc',
-    cloak: '#1b4a52', cloakD: '#0f2d33',
-    org: '#ff9a2e', orgD: '#c96512',
-    blade: '#ffb347', core: '#fff1d0', visor: '#3ff0d6'
-  };
-
+  // ---- palette: Mars field gear (sepia cloth, rust cloak, dusty leather), site teal + amber glows ----
+  var C = { ol: '#1c130f', cloth: '#5a4a42', clothD: '#3e322d', lea: '#86552f', leaD: '#5c3a20', leaDD: '#3f2814', leaL: '#b07842',
+    wrap: '#b89a72', wrapD: '#8a6e4c', wrapDD: '#6a5238', tun: '#2a7a70', tunD: '#1b5650', metal: '#cbbba3', metalD: '#8e7b68', metalL: '#f1e6d2',
+    cloak: '#6e2e1e', cloakD: '#4a1c12', org: '#ff9a2e', sc: '#c99a62', scD: '#8f6438', steel: '#9aa3ac', steelD: '#646c75',
+    blade: '#ffb347', core: '#fff1d0', visor: '#3ff0d6', puff: '#b07a4e', rust: '#8a4a22', dust: '#a8683a', rec: '#ff4a3a' };
   function leg(cls, far) {
     return '<g class="' + cls + '">' +
       '<path d="M-8 -5 L8 -5 L7 22 Q0 26 -7 22 Z" fill="' + (far ? C.clothD : C.cloth) + '"/>' +
       '<g class="lr-shin">' +
         '<path d="M-7 -2 L7 -2 L6 20 L-6 20 Z" fill="' + (far ? C.wrapD : C.wrap) + '"/>' +
         '<path d="M-6 4 L6 1 M-6 10 L6 7 M-6 16 L6 13" stroke="' + (far ? C.wrapDD : C.wrapD) + '" stroke-width="1.8"/>' +
+        '<path d="M-5.5 17.5 L5.5 17.5" stroke="' + C.dust + '" stroke-width="3" opacity=".55"/>' +
         '<g class="lr-foot">' +
           '<path d="M-8 -6 h11 q12 0 13 10 v3 h-24 z" fill="' + (far ? C.leaDD : C.leaD) + '"/>' +
           '<rect x="-8.5" y="-9" width="16" height="6" rx="2" fill="' + (far ? C.leaD : C.lea) + '"/>' +
+          '<path d="M-6.5 3.5 L14 3.5" stroke="' + C.dust + '" stroke-width="2.6" opacity=".7"/>' +
         '</g>' +
       '</g>' +
       '<circle cx="0" cy="22" r="5.5" fill="' + (far ? C.leaD : C.lea) + '"/>' +
     '</g>';
   }
-
   function flap(cls, far) {
     return '<g class="' + cls + '">' +
       '<path d="M-9 -3 L9 -3 L10.5 11 Q1 14 -9.5 11 Z" fill="' + (far ? C.tunD : C.tun) + '"/>' +
-      '<path d="M-9 8 Q1 11 10 8" stroke="' + (far ? C.orgD : C.org) + '" stroke-width="2" fill="none"/>' +
+      '<path d="M-9 8 Q1 11 10 8" stroke="' + (far ? C.scD : C.sc) + '" stroke-width="2" fill="none"/>' +
     '</g>';
   }
-
   function arm(cls, far) {
     var sl = far ? C.clothD : C.cloth, br = far ? C.leaD : C.lea, brD = far ? C.leaDD : C.leaD;
     return '<g class="lr-lean"><g class="' + cls + '">' +
@@ -1937,10 +1931,41 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       '<path d="M-6 -1 Q0 -6 6 -1" stroke="' + brD + '" stroke-width="1.4" stroke-dasharray="2 2" fill="none"/>' +
     '</g></g>';
   }
-
+  var pack =   // oxygen pack with a shoulder-mounted camera
+    '<path d="M-29 -40 L-29 -49" stroke="' + C.ol + '" stroke-width="4.5"/>' +
+    '<path d="M-29 -40 L-29 -49" stroke="' + C.steelD + '" stroke-width="2"/>' +
+    '<rect x="-36" y="-56" width="13" height="8" rx="2" fill="' + C.metalD + '" stroke-width="2.4"/>' +
+    '<path d="M-34 -54 h6" stroke="' + C.metalL + '" stroke-width="1.4"/>' +
+    '<rect x="-24" y="-55.5" width="3" height="7" rx="1" fill="' + C.ol + '" stroke="none"/>' +
+    '<circle class="lr-glow-t lr-lens" cx="-22" cy="-52" r="2.2" fill="' + C.visor + '" stroke="none"/>' +
+    '<circle class="lr-glow-r lr-rec" cx="-33.5" cy="-58" r="1.3" fill="' + C.rec + '" stroke="none"/>' +
+    '<rect x="-24" y="-30" width="8" height="18" rx="2" fill="' + C.leaD + '" stroke-width="2.4"/>' +
+    '<rect x="-36" y="-41" width="15" height="35" rx="6.5" fill="' + C.metal + '"/>' +
+    '<path d="M-33 -36 Q-32 -38.5 -28 -38.5" stroke="' + C.metalL + '" stroke-width="2" fill="none"/>' +
+    '<path d="M-35.5 -30 h14" stroke="' + C.tun + '" stroke-width="2.8"/>' +
+    '<path d="M-35.5 -18 h14" stroke="' + C.leaD + '" stroke-width="3.2"/>' +
+    '<path d="M-24 -26 L-24 -12" stroke="' + C.metalD + '" stroke-width="2" opacity=".8"/>' +
+    '<path d="M-31 -10 q2 2 4 0" stroke="' + C.rust + '" stroke-width="1.8" fill="none" opacity=".7"/>' +
+    '<rect x="-27" y="-44.5" width="6" height="5" rx="1.5" fill="' + C.metalD + '" stroke-width="2"/>' +
+    '<circle class="lr-glow-t" cx="-28.5" cy="-23" r="1.8" fill="' + C.visor + '" stroke="none"/>' +
+    '<path d="M-24 -44 Q-22 -51 -12 -44" stroke="' + C.ol + '" stroke-width="6.5" fill="none"/>' +
+    '<path d="M-24 -44 Q-22 -51 -12 -44" stroke="' + C.metalD + '" stroke-width="3.6" fill="none"/>' +
+    '<path d="M-24 -44 Q-22 -51 -12 -44" stroke="' + C.ol + '" stroke-width="3.6" stroke-dasharray="1 2.2" fill="none" opacity=".55"/>';
+  var belt =   // tool belt: wrench, pouches, buckle
+    '<rect x="-17" y="-5.5" width="33" height="9" rx="2" fill="' + C.leaD + '"/>' +
+    '<path d="M-14 4 L-15 15" stroke="' + C.ol + '" stroke-width="4.6"/>' +
+    '<path d="M-14 4 L-15 15" stroke="' + C.steel + '" stroke-width="2.2"/>' +
+    '<path d="M-18 15 Q-15 21 -12 15" stroke="' + C.ol + '" stroke-width="4.6" fill="none"/>' +
+    '<path d="M-18 15 Q-15 21 -12 15" stroke="' + C.steel + '" stroke-width="2.2" fill="none"/>' +
+    '<rect x="-18" y="-3" width="7.5" height="9.5" rx="2" fill="' + C.lea + '" stroke-width="2.2"/>' +
+    '<path d="M-18 0.5 h7.5" stroke="' + C.leaDD + '" stroke-width="1.4"/>' +
+    '<rect x="-9.5" y="-2.5" width="6.5" height="8" rx="2" fill="' + C.leaL + '" stroke-width="2.2"/>' +
+    '<path d="M-9.5 0.5 h6.5" stroke="' + C.leaD + '" stroke-width="1.4"/>' +
+    '<circle cx="-6.2" cy="2.8" r="0.9" fill="' + C.metal + '" stroke="none"/>' +
+    '<rect x="6" y="-5.5" width="8" height="9" rx="1.5" fill="' + C.metal + '" stroke-width="2.2"/>' +
+    '<path d="M2 -5.5 v9" stroke="' + C.leaDD + '" stroke-width="1.4"/>';
   var torso =
-    '<g class="lr-lean">' +
-      '<rect x="-20" y="-9" width="9" height="12" rx="2.5" fill="' + C.lea + '"/>' +
+    '<g class="lr-lean">' + pack +
       '<path d="M-15 4 L-17 -20 Q-16 -35 1 -36 Q17 -35 17 -20 L14 4 Z" fill="' + C.tun + '"/>' +
       '<path d="M-11 -6 Q-13 -18 -10 -28" stroke="' + C.tunD + '" stroke-width="4" fill="none"/>' +
       '<path d="M3 -34 Q16 -33 16.5 -20 L14 -2 L4 -2 Z" fill="' + C.lea + '"/>' +
@@ -1948,10 +1973,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       '<path d="M-13 -31 L11 -1" stroke="' + C.ol + '" stroke-width="8"/>' +
       '<path d="M-13 -31 L11 -1" stroke="' + C.leaD + '" stroke-width="4.5"/>' +
       '<rect x="-4" y="-21" width="6" height="7" rx="1.5" fill="' + C.metal + '" stroke-width="2" transform="rotate(-38 -1 -17.5)"/>' +
-      '<rect x="-16" y="-5" width="31" height="8" rx="2" fill="' + C.leaD + '"/>' +
-      '<rect x="6" y="-5" width="8" height="8" rx="1.5" fill="' + C.metal + '" stroke-width="2.2"/>' +
+      belt +
     '</g>';
-
   var head =
     '<g class="lr-lean"><g class="lr-head">' +
       '<path d="M-4 -57 L-13 -71" fill="none" stroke="' + C.metalL + '" stroke-width="2.5"/>' +
@@ -1959,24 +1982,27 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       '<path d="M-5 -55 L-23 -59 L-9 -45 Z" fill="' + C.metalD + '"/>' +
       '<path d="M-10 -36 Q-15 -54 0 -60 Q15 -62 21 -50 Q23 -41 16 -36 Q3 -31 -10 -36 Z" fill="' + C.metal + '"/>' +
       '<path d="M-6 -49 Q-3 -56 5 -57" stroke="' + C.metalL + '" stroke-width="3" fill="none"/>' +
+      '<path d="M-9 -38.5 Q3 -34.5 15 -38" stroke="' + C.dust + '" stroke-width="2.6" fill="none" opacity=".6"/>' +
+      '<path d="M13 -57 Q11 -53 12.5 -50" stroke="' + C.rust + '" stroke-width="2" fill="none" opacity=".7"/>' +
+      '<path d="M-3 -44 q2 -1 3 1" stroke="' + C.rust + '" stroke-width="2" fill="none" opacity=".6"/>' +
+      '<rect x="10" y="-43" width="9" height="7" rx="2" fill="' + C.metalD + '" stroke-width="2.2"/>' +
+      '<path d="M12.5 -41 v3 M15.5 -41 v3" stroke="' + C.ol + '" stroke-width="1.2"/>' +
       '<path class="lr-glow-t" d="M4 -49 L22 -48.5 Q22.5 -44 19 -43 L3 -44 Z" fill="' + C.visor + '" stroke-width="2"/>' +
     '</g></g>';
-
   var scarf =
     '<g class="lr-lean">' +
-      '<path d="M-13 -35 Q1 -42 14 -35 L13 -26 Q0 -32 -13 -27 Z" fill="' + C.org + '"/>' +
-      '<path d="M-10 -31 Q1 -36 11 -30" stroke="' + C.orgD + '" stroke-width="1.6" fill="none"/>' +
+      '<path d="M-13 -35 Q1 -42 14 -35 L13 -26 Q0 -32 -13 -27 Z" fill="' + C.sc + '"/>' +
+      '<path d="M-10 -31 Q1 -36 11 -30" stroke="' + C.scD + '" stroke-width="1.6" fill="none"/>' +
     '</g>';
-
   root.innerHTML =
     '<svg viewBox="0 0 140 150" xmlns="http://www.w3.org/2000/svg">' +
       '<g class="lr-dust"></g>' +
       '<g class="lr-hip" stroke="' + C.ol + '" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' +
         '<path class="lr-cloak" fill="' + C.cloak + '"/>' +
         '<path class="lr-fold" fill="none" stroke="' + C.cloakD + '" stroke-width="2.5"/>' +
-        '<path class="lr-trim" fill="none" stroke="' + C.org + '" stroke-width="2"/>' +
-        '<path class="lr-tail2" fill="' + C.orgD + '" stroke-width="2.5"/>' +
-        '<path class="lr-tail1" fill="' + C.org + '" stroke-width="2.5"/>' +
+        '<path class="lr-trim" fill="none" stroke="' + C.sc + '" stroke-width="2"/>' +
+        '<path class="lr-tail2" fill="' + C.scD + '" stroke-width="2.5"/>' +
+        '<path class="lr-tail1" fill="' + C.sc + '" stroke-width="2.5"/>' +
         arm('lr-arm-b', true) + flap('lr-flap-b', true) + leg('lr-leg-b', true) +
         torso + leg('lr-leg-f', false) + flap('lr-flap-f', false) +
         head + scarf + arm('lr-arm-f', false) +
@@ -1985,7 +2011,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
 
   var $ = function (s) { return root.querySelector(s); };
   var hip = $('.lr-hip'), cloak = $('.lr-cloak'), fold = $('.lr-fold'), trim = $('.lr-trim'),
-      tail1 = $('.lr-tail1'), tail2 = $('.lr-tail2'), dustG = $('.lr-dust'), tip = $('.lr-tip'), headEl = $('.lr-head');
+      tail1 = $('.lr-tail1'), tail2 = $('.lr-tail2'), dustG = $('.lr-dust'), tip = $('.lr-tip'), headEl = $('.lr-head'), rec = $('.lr-rec');
   var leans = root.querySelectorAll('.lr-lean');
   var LB = $('.lr-leg-b'), LF = $('.lr-leg-f'), FB = $('.lr-flap-b'), FF = $('.lr-flap-f'), AB = $('.lr-arm-b'), AF = $('.lr-arm-f');
 
@@ -2218,6 +2244,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     tail1.setAttribute('d', ribbon(s0, 38, 7, 9, 8, 2.6, 0));
     tail2.setAttribute('d', ribbon([s0[0] + 1, s0[1] + 4], 29, 6, 8, 7, 2.6, 1.7));
     tip.setAttribute('opacity', Math.sin(t * 6) > -0.3 ? 1 : 0.35);
+    rec.setAttribute('opacity', Math.sin(t * 3.2) > 0 ? 1 : 0.2);   // camera recording light
 
     // dust puff when the planted foot switches
     var runU = x / scale, low = mode === 'run' ? (legPose(phase).y >= legPose(phase + Math.PI).y ? 'f' : 'b') : null;
@@ -2232,7 +2259,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     puffs.forEach(function (p) {
       var k = p.age / 0.55;
       html += '<circle cx="' + (p.wx - runU - 3 * k).toFixed(1) + '" cy="' + (GROUND - 3 - 6 * k).toFixed(1) +
-              '" r="' + (2 + 6 * k).toFixed(1) + '" fill="#8e9cad" opacity="' + (0.5 * (1 - k)).toFixed(2) + '"/>';
+              '" r="' + (2 + 6 * k).toFixed(1) + '" fill="' + C.puff + '" opacity="' + (0.5 * (1 - k)).toFixed(2) + '"/>';
     });
     dustG.innerHTML = html;
   }
