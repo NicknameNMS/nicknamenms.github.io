@@ -2259,6 +2259,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     if (mode === 'run' && !target && x > layer.clientWidth + 40) { finish(); return; }
     requestAnimationFrame(loop);
   }
+  window.labRunnerBusy = function () { return running; };
   window.labRunnerGo = function () {   // called by the mech's footer button
     if (running) return;
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -3011,6 +3012,9 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       else { state = 'idle'; y = 0; placeFloor(); frame(0); mech.classList.remove('lm-clickable'); ctx.clearRect(0, 0, CW, CH); smoke = []; }
       return;
     }
+    // ignore presses until the whole fight is over: runner off screen, and the wreck's parts and fires gone
+    if (window.labRunnerBusy && window.labRunnerBusy()) return;
+    if (state === 'destroyed' && (pieces.length || fire.length || gfires.length)) return;
     // drop the mech in (only when none is on screen), and send the runner out to fight it
     if (!enemy.spawn()) return;
     if (window.labRunnerGo) window.labRunnerGo();
