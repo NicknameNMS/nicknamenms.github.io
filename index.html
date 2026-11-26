@@ -76,7 +76,8 @@ section{padding:88px 0 0}
 .hero{position:relative;padding:96px 0 40px;overflow:hidden}
 .hero canvas{position:absolute;inset:0;width:100%;height:100%;z-index:-1;-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.6) 40%,#000 70%);mask-image:linear-gradient(90deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.6) 40%,#000 70%)}
 .callsign{font-family:var(--mono);color:var(--amber);font-size:.95rem;margin:0 0 18px;display:flex;align-items:center;gap:10px}
-.callsign::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber)}
+.callsign::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber);transition:opacity 15ms,box-shadow 15ms}
+.callsign.key-up::before{opacity:.22;box-shadow:none} /* lamp dark between Morse elements (see morse() script) */
 .hero h1{font-size:clamp(3rem,9vw,6.4rem);font-weight:700;letter-spacing:-.01em;line-height:.95}
 .hero h1 .ghost{display:block;color:transparent;-webkit-text-stroke:1.5px var(--phosphor);text-shadow:0 0 28px rgba(98,242,208,.25)}
 .hero .role{text-shadow:0 0 6px var(--space),0 0 14px var(--space);font-size:clamp(1.05rem,2.2vw,1.3rem);max-width:56ch;margin:26px 0 30px;color:var(--text)}
@@ -492,6 +493,20 @@ section{padding:88px 0 0}
   .bot{animation:none;left:calc(50% - 62px)}
   .bot-wheel,.bot-bob,.bot-arm,.bot-tread,.bot-trace,.bot-led,.bot-eyes{animation:none}
 }
+/* Lab Runner: on-demand character that sprints past the bench bot (see labRunner() script) */
+.lab-runner{position:absolute;left:0;bottom:7px;width:100px;height:107px;visibility:hidden;pointer-events:none;will-change:transform}
+.lab-runner.go{visibility:visible}
+.lab-runner svg{display:block;width:100%;height:100%;overflow:visible}
+.lab-runner .lr-glow-o{filter:drop-shadow(0 0 3px rgba(255,154,46,.95))}
+.lab-runner .lr-glow-t{filter:drop-shadow(0 0 3px rgba(63,240,214,.95))}
+@media (max-width:600px){.lab-runner{width:80px;height:86px}}
+/* near-invisible trigger in the footer's bottom-left corner */
+footer{position:relative}
+.lr-btn{position:absolute;left:8px;bottom:8px;width:28px;height:28px;padding:0;border:0;background:none;cursor:pointer;opacity:.18;transition:opacity .3s}
+.lr-btn::before{content:"";display:block;width:7px;height:7px;margin:auto;border:1px solid var(--muted);border-radius:50%}
+.lr-btn:focus-visible{opacity:.9}
+.lr-btn:focus-visible::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}
+@media (hover:hover){.lr-btn:hover{opacity:.9}.lr-btn:hover::before{border-color:var(--phosphor);box-shadow:0 0 6px var(--phosphor)}}
 
 /* ---------- hand calc: front end vs ADC noise ---------- */
 .nsd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
@@ -1303,8 +1318,10 @@ dialog .close:hover{border-color:var(--phosphor)}
       <circle cx="46" cy="98" r="3.5" class="bl thin"/><circle cx="58" cy="98" r="3.5" class="bl thin"/><circle cx="70" cy="98" r="3.5" class="bl thin"/>
     </svg>
   </div>
+  <div class="lab-runner"></div>
 </div>
 <footer>
+  <button type="button" class="lr-btn" aria-label="Send the lab runner past the robot" title="?"></button>
   <div class="wrap">© 2026 Nicholas Tipton · <span class="mono">KD9YXB</span> · 73</div>
 </footer>
 
@@ -1794,6 +1811,285 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   }
   size(); window.addEventListener("resize", () => { size(); if (still) draw(performance.now()); });
   requestAnimationFrame(draw);
+})();
+
+/* ---------- hero: callsign lamp keys KD9YXB in Morse at 15 WPM ---------- */
+(function morse() {
+  const el = document.querySelector(".callsign");
+  if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;   // steady lamp
+  const CODE = {K: "-.-", D: "-..", 9: "----.", Y: "-.--", X: "-..-", B: "-..."};
+  const DOT = 1200 / 15;          // PARIS timing: 1 dot = 80 ms at 15 WPM
+  const REPEAT_GAP = 3000;        // long pause before sending the callsign again
+  const steps = [];               // [key down?, duration ms]
+  const call = "KD9YXB".split("");
+  call.forEach((ch, i) => {
+    const els = CODE[ch].split("");
+    els.forEach((s, j) => {
+      steps.push([true, s === "." ? DOT : 3 * DOT]);          // dot = 1, dash = 3
+      if (j < els.length - 1) steps.push([false, DOT]);        // gap inside a letter = 1
+    });
+    steps.push([false, i < call.length - 1 ? 3 * DOT : REPEAT_GAP]);   // gap between letters = 3
+  });
+  let i = 0, timer = null;
+  function tick() {
+    const [down, ms] = steps[i];
+    el.classList.toggle("key-up", !down);
+    i = (i + 1) % steps.length;
+    timer = setTimeout(tick, ms);
+  }
+  function start() { if (!timer) { i = 0; tick(); } }
+  function stop() { clearTimeout(timer); timer = null; el.classList.remove("key-up"); }
+  if ("IntersectionObserver" in window) new IntersectionObserver(es => es[0].isIntersecting ? start() : stop()).observe(el);
+  else start();
+})();
+
+/* ---------- Lab Runner: footer button sends a runner sprinting past the bench bot ---------- */
+/* Character art + run cycle from LAB_RUNNER.md; adapted to run once per click inside .botlane. */
+(function labRunner() {
+  var root = document.querySelector('.lab-runner');
+  var lane = document.querySelector('.botlane');
+  var btn = document.querySelector('.lr-btn');
+  if (!root || !lane || !btn) return;
+
+  // ---- palette: site teal + orange, with leather and cloth ----
+  var C = {
+    ol: '#121820',
+    cloth: '#3d4859', clothD: '#2b3441',
+    lea: '#86552f', leaD: '#5c3a20', leaDD: '#3f2814', leaL: '#b07842',
+    wrap: '#a3825c', wrapD: '#7a5f42', wrapDD: '#5e4732',
+    tun: '#23847a', tunD: '#185f58',
+    metal: '#8798ad', metalD: '#5f6f84', metalL: '#c3cfdc',
+    cloak: '#1b4a52', cloakD: '#0f2d33',
+    org: '#ff9a2e', orgD: '#c96512',
+    blade: '#ffb347', core: '#fff1d0', visor: '#3ff0d6'
+  };
+
+  function leg(cls, far) {
+    return '<g class="' + cls + '">' +
+      '<path d="M-8 -5 L8 -5 L7 22 Q0 26 -7 22 Z" fill="' + (far ? C.clothD : C.cloth) + '"/>' +
+      '<g class="lr-shin">' +
+        '<path d="M-7 -2 L7 -2 L6 20 L-6 20 Z" fill="' + (far ? C.wrapD : C.wrap) + '"/>' +
+        '<path d="M-6 4 L6 1 M-6 10 L6 7 M-6 16 L6 13" stroke="' + (far ? C.wrapDD : C.wrapD) + '" stroke-width="1.8"/>' +
+        '<g class="lr-foot">' +
+          '<path d="M-8 -6 h11 q12 0 13 10 v3 h-24 z" fill="' + (far ? C.leaDD : C.leaD) + '"/>' +
+          '<rect x="-8.5" y="-9" width="16" height="6" rx="2" fill="' + (far ? C.leaD : C.lea) + '"/>' +
+        '</g>' +
+      '</g>' +
+      '<circle cx="0" cy="22" r="5.5" fill="' + (far ? C.leaD : C.lea) + '"/>' +
+    '</g>';
+  }
+
+  function flap(cls, far) {
+    return '<g class="' + cls + '">' +
+      '<path d="M-9 -3 L9 -3 L10.5 11 Q1 14 -9.5 11 Z" fill="' + (far ? C.tunD : C.tun) + '"/>' +
+      '<path d="M-9 8 Q1 11 10 8" stroke="' + (far ? C.orgD : C.org) + '" stroke-width="2" fill="none"/>' +
+    '</g>';
+  }
+
+  function arm(cls, far) {
+    var sl = far ? C.clothD : C.cloth, br = far ? C.leaD : C.lea, brD = far ? C.leaDD : C.leaD;
+    return '<g class="lr-lean"><g class="' + cls + '">' +
+      '<rect x="-6" y="-4" width="12" height="21" rx="6" fill="' + sl + '"/>' +
+      '<g class="lr-fore">' +
+        '<path class="lr-glow-o" d="M1 2 L8 4.5 L5.5 42 L2.5 48 L0.5 42 Z" fill="' + C.blade + '" stroke-width="2"/>' +
+        '<path d="M3.6 8 L3.7 41" stroke="' + C.core + '" stroke-width="1.6"/>' +
+        '<rect x="-5.5" y="-3" width="11" height="10" rx="5" fill="' + sl + '"/>' +
+        '<rect x="-7" y="3" width="14" height="12" rx="3" fill="' + br + '"/>' +
+        '<path d="M-7 7 h14 M-7 11 h14" stroke="' + brD + '" stroke-width="1.6"/>' +
+        '<path class="lr-glow-o" d="M5 5.5 v7" stroke="' + C.org + '" stroke-width="2"/>' +
+        '<circle cx="0" cy="18" r="5.2" fill="' + brD + '"/>' +
+      '</g>' +
+      '<path d="M-9 2 Q-9 -10 0 -10 Q9 -10 9 2 Q0 5 -9 2 Z" fill="' + br + '"/>' +
+      '<path d="M-6 -1 Q0 -6 6 -1" stroke="' + brD + '" stroke-width="1.4" stroke-dasharray="2 2" fill="none"/>' +
+    '</g></g>';
+  }
+
+  var torso =
+    '<g class="lr-lean">' +
+      '<rect x="-20" y="-9" width="9" height="12" rx="2.5" fill="' + C.lea + '"/>' +
+      '<path d="M-15 4 L-17 -20 Q-16 -35 1 -36 Q17 -35 17 -20 L14 4 Z" fill="' + C.tun + '"/>' +
+      '<path d="M-11 -6 Q-13 -18 -10 -28" stroke="' + C.tunD + '" stroke-width="4" fill="none"/>' +
+      '<path d="M3 -34 Q16 -33 16.5 -20 L14 -2 L4 -2 Z" fill="' + C.lea + '"/>' +
+      '<path d="M7 -29 v22" stroke="' + C.leaL + '" stroke-width="2" fill="none"/>' +
+      '<path d="M-13 -31 L11 -1" stroke="' + C.ol + '" stroke-width="8"/>' +
+      '<path d="M-13 -31 L11 -1" stroke="' + C.leaD + '" stroke-width="4.5"/>' +
+      '<rect x="-4" y="-21" width="6" height="7" rx="1.5" fill="' + C.metal + '" stroke-width="2" transform="rotate(-38 -1 -17.5)"/>' +
+      '<rect x="-16" y="-5" width="31" height="8" rx="2" fill="' + C.leaD + '"/>' +
+      '<rect x="6" y="-5" width="8" height="8" rx="1.5" fill="' + C.metal + '" stroke-width="2.2"/>' +
+    '</g>';
+
+  var head =
+    '<g class="lr-lean"><g class="lr-head">' +
+      '<path d="M-4 -57 L-13 -71" fill="none" stroke="' + C.metalL + '" stroke-width="2.5"/>' +
+      '<circle class="lr-glow-o lr-tip" cx="-13.5" cy="-72" r="3.2" fill="' + C.org + '"/>' +
+      '<path d="M-5 -55 L-23 -59 L-9 -45 Z" fill="' + C.metalD + '"/>' +
+      '<path d="M-10 -36 Q-15 -54 0 -60 Q15 -62 21 -50 Q23 -41 16 -36 Q3 -31 -10 -36 Z" fill="' + C.metal + '"/>' +
+      '<path d="M-6 -49 Q-3 -56 5 -57" stroke="' + C.metalL + '" stroke-width="3" fill="none"/>' +
+      '<path class="lr-glow-t" d="M4 -49 L22 -48.5 Q22.5 -44 19 -43 L3 -44 Z" fill="' + C.visor + '" stroke-width="2"/>' +
+    '</g></g>';
+
+  var scarf =
+    '<g class="lr-lean">' +
+      '<path d="M-13 -35 Q1 -42 14 -35 L13 -26 Q0 -32 -13 -27 Z" fill="' + C.org + '"/>' +
+      '<path d="M-10 -31 Q1 -36 11 -30" stroke="' + C.orgD + '" stroke-width="1.6" fill="none"/>' +
+    '</g>';
+
+  root.innerHTML =
+    '<svg viewBox="0 0 140 150" xmlns="http://www.w3.org/2000/svg">' +
+      '<g class="lr-dust"></g>' +
+      '<g class="lr-hip" stroke="' + C.ol + '" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path class="lr-cloak" fill="' + C.cloak + '"/>' +
+        '<path class="lr-fold" fill="none" stroke="' + C.cloakD + '" stroke-width="2.5"/>' +
+        '<path class="lr-trim" fill="none" stroke="' + C.org + '" stroke-width="2"/>' +
+        '<path class="lr-tail2" fill="' + C.orgD + '" stroke-width="2.5"/>' +
+        '<path class="lr-tail1" fill="' + C.org + '" stroke-width="2.5"/>' +
+        arm('lr-arm-b', true) + flap('lr-flap-b', true) + leg('lr-leg-b', true) +
+        torso + leg('lr-leg-f', false) + flap('lr-flap-f', false) +
+        head + scarf + arm('lr-arm-f', false) +
+      '</g>' +
+    '</svg>';
+
+  var $ = function (s) { return root.querySelector(s); };
+  var hip = $('.lr-hip'), cloak = $('.lr-cloak'), fold = $('.lr-fold'), trim = $('.lr-trim'),
+      tail1 = $('.lr-tail1'), tail2 = $('.lr-tail2'), dustG = $('.lr-dust'), tip = $('.lr-tip'), headEl = $('.lr-head');
+  var leans = root.querySelectorAll('.lr-lean');
+  var LB = $('.lr-leg-b'), LF = $('.lr-leg-f'), FB = $('.lr-flap-b'), FF = $('.lr-flap-f'), AB = $('.lr-arm-b'), AF = $('.lr-arm-f');
+
+  var T1 = 22, T2 = 22, FOOT = 7, HIPX = 72, GROUND = 150, CYCLE = 0.46, STRIDE_BOOST = 2.2;
+  var D = Math.PI / 180, TAU = 2 * Math.PI;
+
+  // smooth run-cycle curves (no hard corners -> no jerky snaps)
+  function legPose(q) {
+    var s = Math.sin(q);
+    var r = (1 + Math.cos(q - 0.25)) / 2; r = r * r;    // 1 at mid-recovery, ~0 in contact
+    var at = 37 * s + 4, bend = 16 + 82 * r, as = at - bend;
+    return { at: at, bend: bend, as: as, toe: 26 * r,
+             x: T1 * Math.sin(at * D) + T2 * Math.sin(as * D),
+             y: T1 * Math.cos(at * D) + T2 * Math.cos(as * D) };
+  }
+  function setLeg(el, p, lx) {
+    el.setAttribute('transform', 'translate(' + lx + ',0) rotate(' + (-p.at).toFixed(2) + ')');
+    var shin = el.querySelector('.lr-shin');
+    shin.setAttribute('transform', 'translate(0,22) rotate(' + p.bend.toFixed(2) + ')');
+    shin.querySelector('.lr-foot').setAttribute('transform', 'translate(0,22) rotate(' + (p.toe + p.as).toFixed(2) + ')');
+  }
+  function setArm(el, q, sx) {
+    var s = Math.sin(q - 0.3), ua = 6 + 32 * s, fb = 82 + 14 * s;
+    el.setAttribute('transform', 'translate(' + sx.toFixed(2) + ',-28) rotate(' + (-ua).toFixed(2) + ')');
+    el.querySelector('.lr-fore').setAttribute('transform', 'translate(0,16) rotate(' + (-fb).toFixed(2) + ')');
+  }
+  function softMax(a, b) { var k = 0.8; return Math.max(a, b) + Math.log(1 + Math.exp(-k * Math.abs(a - b))) / k; }
+  function rot(x, y, d) { var r = d * D, c = Math.cos(r), s = Math.sin(r); return [x * c - y * s, x * s + y * c]; }
+  function pt(p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
+
+  // ground speed that matches how far the planted foot travels (keeps feet from skating)
+  var SPEED_U = (function () {
+    var N = 720, sum = 0, prev = null;
+    for (var i = 0; i <= N; i++) {
+      var q = TAU * i / N, f = legPose(q), b = legPose(q + Math.PI);
+      if (prev !== null && f.y >= b.y) sum += prev - f.x;
+      prev = f.x;
+    }
+    return 2 * sum / CYCLE;
+  })();
+
+  var phase = 0, t = 0, x = -140, last = null, puffs = [], lowWas = null;
+
+  function ribbon(a, len, n, width, amp, freq, off) {
+    var top = [], bot = [], i;
+    for (i = 0; i <= n; i++) {
+      var k = i / n, px = a[0] - len * k,
+          py = a[1] + 5 * k + amp * k * Math.sin(t * TAU * freq - i * 0.9 + off);
+      var hw = width * (1 - 0.3 * k) / 2;
+      top.push([px, py - hw]); bot.push([px, py + hw]);
+    }
+    var d = 'M' + pt(top[0]);
+    for (i = 1; i <= n; i++) d += ' L' + pt(top[i]);
+    d += ' L' + pt([top[n][0] + 4, (top[n][1] + bot[n][1]) / 2]) + ' L' + pt(bot[n]);
+    for (i = n - 1; i >= 0; i--) d += ' L' + pt(bot[i]);
+    return d + ' Z';
+  }
+
+  function frame(dt) {
+    t += dt;
+    phase += TAU * dt / CYCLE;
+    var scale = root.clientWidth / 140;
+    x += SPEED_U * STRIDE_BOOST * scale * dt;
+    root.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
+
+    var pb = legPose(phase + Math.PI), pf = legPose(phase);
+    var gap = pb.y - pf.y;
+    var hipY = GROUND - FOOT - softMax(pb.y, pf.y) - 5 * Math.exp(-gap * gap / 40);   // short airborne hop between steps
+    var lean = 17 + 1.5 * Math.sin(2 * phase - 0.6);
+    hip.setAttribute('transform', 'translate(' + HIPX + ',' + hipY.toFixed(2) + ')');
+    for (var i = 0; i < leans.length; i++) leans[i].setAttribute('transform', 'rotate(' + lean.toFixed(2) + ')');
+    var hr = -lean * 0.5 + 1.5 * Math.sin(2 * phase - 1.2);
+    headEl.setAttribute('transform', 'rotate(' + hr.toFixed(2) + ' 2 -34) translate(2 -34) scale(1.2) translate(-2 34)');
+
+    setLeg(LB, pb, -2); setLeg(LF, pf, 2);
+    FB.setAttribute('transform', 'translate(-3,1) rotate(' + (-0.45 * pb.at).toFixed(2) + ')');
+    FF.setAttribute('transform', 'translate(3,1) rotate(' + (-0.45 * pf.at).toFixed(2) + ')');
+    setArm(AF, phase + Math.PI, 2 + 1.2 * Math.sin(phase));
+    setArm(AB, phase, -1.2 * Math.sin(phase));
+
+    // cloak + scarf tails flowing behind
+    var w = function (k, amp) { return amp * (Math.sin(t * TAU * 2.0 - k * 1.2) + 0.3 * Math.sin(2 * phase - k)); };
+    var a0 = rot(-8, -34, lean), b0 = rot(-13, -6, lean);
+    var P = function (dx, dy) { return [a0[0] + dx, a0[1] + dy]; };
+    var p1 = P(-18, 1 + w(1, 1.5)), p2 = P(-36, 7 + w(2, 3.5)), p3 = P(-55, 15 + w(3, 6));
+    var m12 = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+    cloak.setAttribute('d', 'M' + pt(a0) + ' Q' + pt(p1) + ' ' + pt(m12) + ' Q' + pt(p2) + ' ' + pt(p3) +
+      ' L' + pt(P(-57, 28 + w(3.4, 6.5))) + ' L' + pt(P(-48, 25 + w(3, 5))) +
+      ' L' + pt(P(-41, 38 + w(2.6, 5))) + ' L' + pt(P(-32, 31 + w(2, 4))) +
+      ' L' + pt(P(-23, 44 + w(1.6, 3))) + ' L' + pt(P(-16, 35 + w(1, 2))) + ' L' + pt(b0) + ' Z');
+    fold.setAttribute('d', 'M' + pt(P(-9, 16)) + ' Q' + pt(P(-24, 17 + w(1.5, 2))) + ' ' + pt(P(-43, 27 + w(2.8, 5))));
+    trim.setAttribute('d', 'M' + pt(P(-2, 2)) + ' Q' + pt(P(-18, 4 + w(1, 1.5))) + ' ' + pt(P(-32, 9 + w(2, 3))));
+    var s0 = rot(-11, -31, lean);
+    tail1.setAttribute('d', ribbon(s0, 38, 7, 9, 8, 2.6, 0));
+    tail2.setAttribute('d', ribbon([s0[0] + 1, s0[1] + 4], 29, 6, 8, 7, 2.6, 1.7));
+    tip.setAttribute('opacity', Math.sin(t * 6) > -0.3 ? 1 : 0.35);
+
+    // dust puff when the planted foot switches
+    var runU = x / scale, low = pf.y >= pb.y ? 'f' : 'b';
+    if (lowWas && low !== lowWas) {
+      var p = low === 'f' ? pf : pb;
+      puffs.push({ wx: runU + HIPX + (low === 'f' ? 2 : -2) + p.x - 4, age: 0 });
+    }
+    lowWas = low;
+    var html = '';
+    puffs = puffs.filter(function (p) { p.age += dt; return p.age < 0.55; });
+    puffs.forEach(function (p) {
+      var k = p.age / 0.55;
+      html += '<circle cx="' + (p.wx - runU - 3 * k).toFixed(1) + '" cy="' + (GROUND - 3 - 6 * k).toFixed(1) +
+              '" r="' + (2 + 6 * k).toFixed(1) + '" fill="#8e9cad" opacity="' + (0.5 * (1 - k)).toFixed(2) + '"/>';
+    });
+    dustG.innerHTML = html;
+  }
+
+  // ---- one sprint per click: enter off the left edge, exit off the right, then hide ----
+  var running = false;
+  function finish() { running = false; root.classList.remove('go'); dustG.innerHTML = ''; }
+  function loop(now) {
+    var dt = last == null ? 0 : Math.min(0.05, (now - last) / 1000);
+    last = now; frame(dt);
+    if (x > lane.clientWidth + 40) { finish(); return; }
+    requestAnimationFrame(loop);
+  }
+  btn.addEventListener('click', function () {
+    if (running) return;
+    running = true;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // reduced motion: show a still pose for a moment instead of a sprint
+      phase = 0.8; t = 0; x = 0; frame(0); dustG.innerHTML = '';
+      root.style.transform = 'translate3d(24px,0,0)'; root.classList.add('go');
+      setTimeout(finish, 2500);
+      return;
+    }
+    phase = 0; t = 0; last = null; puffs = []; lowWas = null;
+    x = -root.clientWidth - 20;
+    frame(0); root.classList.add('go');
+    requestAnimationFrame(loop);
+  });
 })();
 </script>
 </body>
