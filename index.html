@@ -1879,6 +1879,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
    spawned (window.labRunnerGo), runs once, and stands on the .botlane floor line like the mech. */
 (function labRunner() {
   var FIGHT_ENEMIES = true;     // run out and attack any enemy registered in window.labEnemies
+  var SPRINT = 1.6;             // speed multiplier while charging an enemy (the demo used 2)
   var root = document.querySelector('.lab-runner');
   var lane = document.querySelector('.botlane');
   var layer = document.querySelector('.lab-mech-layer');
@@ -2154,7 +2155,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     placeFloor();   // [adapted] follow the floor line as the page scrolls
     t += dt;
     target = mode === 'run' ? (pend ? pend.enemy : findEnemy()) : null;
-    var sprint = target ? 2 : 1;                       // sprint while an enemy is out there
+    var sprint = target ? SPRINT : 1;                  // sprint while an enemy is out there
     phase += TAU * dt / CYCLE * sprint;
     var scale = root.clientWidth / 140, lean;
     var fightLean = mode === 'fight' ? fightStep(dt, scale) : mode === 'brake' ? brakeStep(dt, scale) : null;
@@ -2241,13 +2242,16 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   function finish() { running = false; waiting = false; root.classList.remove('go'); dustG.innerHTML = ''; }
   // [adapted] wait off-screen, then set off at the moment that has him reach the mech's attack point
   // right as it finishes landing, so he never has to stop and wait for it
+  function attackPlan(e) {   // where the enemy's attack has to start (hip x, screen px) for him to jump it at the leap point
+    var scale = root.clientWidth / 140, speed = SPEED_U * STRIDE_BOOST * scale * SPRINT, r = e.rect();
+    var leapHip = r.left + 0.1 * r.width - 190, at = e.attackTime ? e.attackTime() : 0;
+    return { speed: speed, scale: scale, triggerHip: leapHip - speed * at };
+  }
   function readyToSetOff() {
     var e = findEnemy();
     if (!e || !e.readyIn) return true;
-    var scale = root.clientWidth / 140, speed = SPEED_U * STRIDE_BOOST * scale * 2, r = e.rect();
-    var leapHip = r.left + 0.1 * r.width - 190, at = e.attackTime ? e.attackTime() : 0;
-    var dist = Math.max(0, leapHip - speed * at - (x + 72 * scale));
-    return e.readyIn() <= Math.max(0, dist / speed - 0.05);
+    var A = attackPlan(e), dist = Math.max(0, A.triggerHip - (x + 72 * A.scale));
+    return e.readyIn() <= Math.max(0, dist / A.speed - 0.05);
   }
   function loop(now) {
     if (waiting) {
@@ -2266,6 +2270,9 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     running = true;
     phase = 0; t = 0; last = null; puffs = []; lowWas = null; mode = 'run'; pend = null; unbrake = 0;
     x = -root.clientWidth - 20;
+    // on narrow screens the laser has to start before he's even visible, so start him farther off the left edge
+    var e = findEnemy();
+    if (e) { var A = attackPlan(e); x = Math.min(x, A.triggerHip - 72 * A.scale - 10); }
     frame(0); waiting = true;   // shown once he sets off (see readyToSetOff)
     requestAnimationFrame(loop);
   };
@@ -2278,9 +2285,11 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   // ---------------- settings ----------------
   var POS_X = 0.78;        // where it lands: 0 = left edge, 1 = right edge
   var FALL_TIME = 0.7;     // seconds to fall from the top of the screen
-  var FEET = 3;
-  var SHOOT_LASER = true;    // fires a laser at the runner before he attacks
-  var LASER_CHARGE = 0.6;    // seconds the laser charges before firing            // px the mech box sits below the floor line so its boots touch it
+  var FEET = 3;            // px the mech box sits below the floor line so its boots touch it
+  var SHOOT_LASER = true;  // fires a laser at the runner before he attacks
+  var LASER_CHARGE = 0.6;  // seconds the laser charges before firing
+  var BEAM_TIME = 1.2;     // seconds the beam sweeps across the floor toward the runner before he jumps it
+  var BEAM_FADE = 0.3;     // seconds the beam takes to die out after that
   // ------------------------------------------
 
   var layer = document.querySelector('.lab-mech-layer');
@@ -2619,11 +2628,11 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     flashAll = Math.max(0, flashAll - dt);
     beams = beams.filter(function (b2) {
       b2.t += dt;
-      var bx2 = b2.B[0] + b2.sweep * easeOut(Math.min(1, b2.t / 0.6));
+      var bx2 = b2.x0 + b2.v * b2.t;   // [adapted] the hit point sweeps steadily across the floor toward the runner
       b2.cx = bx2;
       for (var i = 0; i < 2; i++) sparks.push({ x: bx2 + R(-8, 8), y: GY - 2, vx: R(-450, 450), vy: -R(250, 700), t: 0 });
-      if (b2.t >= b2.next && b2.t < 0.55) { b2.next += 0.11; laserBlast(bx2, false); }
-      return b2.t < 0.6;
+      if (b2.t >= b2.next && b2.t < b2.life - 0.05) { b2.next += 0.11; laserBlast(bx2, false); }
+      return b2.t < b2.life;
     });
     charge = charge.filter(function (c2) { c2.t += dt; return c2.t < c2.life; });
     pieces = pieces.filter(function (p) {
@@ -2732,11 +2741,14 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       });
       ctx.restore();
     });
-    if (glowE) {
-      var gk = glowE.k, gr = (12 + 44 * gk) * (0.85 + 0.3 * Math.random());
-      var g3 = ctx.createRadialGradient(glowE.x, glowE.y, 0, glowE.x, glowE.y, gr);
-      g3.addColorStop(0, 'rgba(246,228,255,' + (0.4 + 0.6 * gk).toFixed(2) + ')'); g3.addColorStop(1, 'rgba(176,92,255,0)');
-      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(glowE.x, glowE.y, gr, 0, 6.283); ctx.fill();
+    if (glowE) {   // [adapted] one glowing bar along the whole visor slit instead of a round glow at one point
+      var gk = Math.min(1.4, glowE.k) * (0.85 + 0.3 * Math.random()), V0 = visor(), sc6 = W / 200;
+      ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#b05cff'; ctx.shadowBlur = 24 * gk;
+      [['rgba(140,60,255,', 0.35, 22], ['rgba(176,92,255,', 0.6, 12], ['rgba(250,238,255,', 0.95, 4]].forEach(function (L) {
+        ctx.strokeStyle = L[0] + Math.min(1, L[1] * gk).toFixed(2) + ')'; ctx.lineWidth = L[2] * sc6 * (0.5 + 0.5 * Math.min(1, gk));
+        ctx.beginPath(); ctx.moveTo(V0[0][0], V0[0][1]); ctx.lineTo(V0[1][0], V0[1][1]); ctx.stroke();
+      });
+      ctx.restore();
     }
     charge.forEach(function (c2) {
       var k = c2.t / c2.life, ex2 = glowE ? glowE.x : c2.x0, ey2 = glowE ? glowE.y : c2.y0;
@@ -2744,12 +2756,14 @@ document.querySelectorAll(".flow .blk").forEach(g => {
       ctx.beginPath(); ctx.arc(c2.x0 + (ex2 - c2.x0) * k * k, c2.y0 + (ey2 - c2.y0) * k * k, 2.2, 0, 6.283); ctx.fill();
     });
     beams.forEach(function (b2) {
-      var k = b2.t / 0.6, a = k < 0.06 ? k / 0.06 : 1 - Math.pow((k - 0.06) / 0.94, 2), wob = 1 + 0.3 * Math.sin(b2.t * 90);
-      var Ex = b2.E[0], Ey = b2.E[1], Bx = b2.cx || b2.B[0], By = b2.B[1];
-      ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#b05cff'; ctx.shadowBlur = 34;
-      [['rgba(140,60,255,' + (0.35 * a).toFixed(2) + ')', 40], ['rgba(176,92,255,' + (0.7 * a).toFixed(2) + ')', 20], ['rgba(250,238,255,' + a.toFixed(2) + ')', 8]].forEach(function (L) {
-        ctx.strokeStyle = L[0]; ctx.lineWidth = L[1] * wob * Math.max(0.12, a);
-        ctx.beginPath(); ctx.moveTo(Ex, Ey); ctx.lineTo(Bx, By); ctx.stroke();
+      var fade = b2.life - b2.t, a = b2.t < 0.04 ? b2.t / 0.04 : fade < BEAM_FADE ? Math.pow(fade / BEAM_FADE, 1.5) : 1, wob = 1 + 0.3 * Math.sin(b2.t * 90);
+      // [adapted] the beam fans out of the whole visor slit (end to end) and converges on the hit point
+      var V = visor(), Ex = (V[0][0] + V[1][0]) / 2, Ey = (V[0][1] + V[1][1]) / 2, Bx = b2.cx, By = GY;
+      ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.shadowColor = '#b05cff'; ctx.shadowBlur = 34;
+      [['rgba(140,60,255,' + (0.35 * a).toFixed(2) + ')', 40, 1], ['rgba(176,92,255,' + (0.7 * a).toFixed(2) + ')', 20, 0.85], ['rgba(250,238,255,' + a.toFixed(2) + ')', 8, 0.55]].forEach(function (L) {
+        var half = L[2] / 2, p1 = [Ex + (V[0][0] - Ex) * L[2], Ey + (V[0][1] - Ey) * L[2]], p2 = [Ex + (V[1][0] - Ex) * L[2], Ey + (V[1][1] - Ey) * L[2]];
+        ctx.fillStyle = ctx.strokeStyle = L[0]; ctx.lineWidth = L[1] * wob * Math.max(0.12, a) * half;
+        ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.lineTo(Bx, By); ctx.closePath(); ctx.fill(); ctx.stroke();
       });
       ctx.strokeStyle = 'rgba(220,180,255,' + (0.9 * a).toFixed(2) + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(Ex, Ey);
       for (var j = 1; j < 12; j++) {
@@ -2757,7 +2771,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
         ctx.lineTo(Ex + (Bx - Ex) * f + nx / nl * off, Ey + (By - Ey) * f + ny / nl * off);
       }
       ctx.lineTo(Bx, By); ctx.stroke();
-      [[Bx, By, 70], [Ex, Ey, 46]].forEach(function (G2) {
+      [[Bx, By, 70]].forEach(function (G2) {   // impact glow only; the visor glow is the bar drawn above
         var g4 = ctx.createRadialGradient(G2[0], G2[1], 0, G2[0], G2[1], G2[2]);
         g4.addColorStop(0, 'rgba(250,238,255,' + (0.9 * a).toFixed(2) + ')'); g4.addColorStop(0.4, 'rgba(176,92,255,' + (0.5 * a).toFixed(2) + ')'); g4.addColorStop(1, 'rgba(176,92,255,0)');
         ctx.fillStyle = g4; ctx.fillRect(G2[0] - G2[2], G2[1] - G2[2], G2[2] * 2, G2[2] * 2);
@@ -2812,7 +2826,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     },
     rect: function () { return mech.getBoundingClientRect(); },
     spawn: function () { if (state === 'destroyed' || state === 'wait') { state = 'gone'; st = 1; return true; } return false; },
-    attackTime: function () { return SHOOT_LASER ? LASER_CHARGE : 0; },
+    attackTime: function () { return SHOOT_LASER ? LASER_CHARGE + BEAM_TIME : 0; },   // [adapted] charge + sweep, so the runner jumps as the beam reaches him
     attack: function (tx, ty) {           // charge, then fire a laser at (tx, ty); returns seconds until it fires
       if (!SHOOT_LASER) return 0;
       laser = { t: 0, tx: tx, ty: ty, fired: false };
@@ -2823,6 +2837,7 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     hit: function (n) {
       var r = mech.getBoundingClientRect(), hx = r.left + r.width * (n >= 2 ? 0.3 : 0.36), hy = r.top + r.height * (n >= 2 ? 0.33 : 0.4);
       hitT = 0; hitN = n; laser = null; glowE = null; if (n >= 2) { downT = 0; doomed = true; popI = 0; }
+      beams.forEach(function (b2) { if (b2.life - b2.t > BEAM_FADE) b2.life = b2.t + BEAM_FADE; });   // a slash cuts the beam
       for (var i = 0; i < 14 + 10 * n; i++) sparks.push({ x: hx, y: hy, vx: R(-150, 750), vy: R(-650, 250), t: 0 });
       for (i = 0; i < 4 * n; i++) debris.push({ x: hx, y: hy, vx: R(80, 520), vy: -R(200, 560), a: R(0, 6.3), va: R(-16, 16),
         r: R(2, 4.5), c: i % 2 ? C.aL : C.aD, pts: [[1, 0], [-0.6, 0.8], [-0.5, -0.9]], t: 0, b: 0 });
@@ -2834,7 +2849,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
   window.labEnemies = window.labEnemies || [];
   window.labEnemies.push(enemy);
 
-  function emitter() { return bodyPt(70, 80); }   // left end of the sensor slit
+  function visor() { return [bodyPt(69, 80), bodyPt(131, 80)]; }   // ends of the sensor slit (hull is scaled 0.88 inside the body)
+  function emitter() { return bodyPt(100, 80); }   // [adapted] centre of the sensor slit: the beam now comes from the whole visor
   function laserBlast(gx, big) {                   // purple plasma explosion where the beam hits the ground
     var s = W / 200, m = big ? 1.6 : 0.8, i, n;
     for (i = 0, n = Math.round(18 * m); i < n; i++) fire.push({ x: gx + R(-10, 10), y: GY - R(0, 12), vx: R(-230, 230) * m, vy: R(-420, -40) * m,
@@ -2924,15 +2940,16 @@ document.querySelectorAll(".flow .blk").forEach(g => {
           engine = Math.max(engine, 0.25 * lk);
           if (laser.t >= LASER_CHARGE) {
             laser.fired = true;
-            var dxL = laser.tx - em[0], dyL = laser.ty - em[1], kL = dyL > 0 ? (GY - em[1]) / dyL : 4;
-            var B = [em[0] + dxL * kL, Math.min(GY, em[1] + dyL * kL)];
-            beams.push({ E: em, B: B, t: 0, sweep: (B[0] < em[0] ? -1 : 1) * 140, next: 0.11 }); laserBlast(B[0], true); flashP = 0.3;
+            // [adapted] hit the floor just in front of the mech, then sweep out to meet the runner where he jumps
+            var mr = mech.getBoundingClientRect(), x0 = mr.left + 0.1 * mr.width, meet = laser.tx + 10;
+            var v = meet < x0 - 40 ? (meet - x0) / BEAM_TIME : -150;
+            beams.push({ x0: x0, v: v, t: 0, life: BEAM_TIME + BEAM_FADE, next: 0.11 }); laserBlast(x0, true); flashP = 0.3;
           }
         } else {
-          var rk = Math.exp(-(laser.t - LASER_CHARGE) * 5);
-          P.bx += 11 * rk; P.hip += 4 * rk; tilt = 6 * rk;
-          glowE = laser.t < LASER_CHARGE + 0.6 ? { x: em[0], y: em[1], k: 1.4 * (1 - (laser.t - LASER_CHARGE) / 0.6) } : null;
-          if (laser.t > LASER_CHARGE + 0.62) { laser = null; glowE = null; }
+          var bt = laser.t - LASER_CHARGE, rk = Math.exp(-bt * 5), on = bt < BEAM_TIME;
+          P.hip += 4 * rk + (on ? 3 : 0); P.bx += 11 * rk + (on ? R(-0.8, 0.8) : 0); tilt = 6 * rk + (on ? R(-0.6, 0.6) : 0);   // braced and shuddering while it fires
+          glowE = bt < BEAM_TIME + BEAM_FADE ? { x: em[0], y: em[1], k: on ? R(1.1, 1.4) : 1.2 * (1 - (bt - BEAM_TIME) / BEAM_FADE) } : null;
+          if (bt > BEAM_TIME + BEAM_FADE + 0.02) { laser = null; glowE = null; }
         }
       }
 
@@ -2972,8 +2989,8 @@ document.querySelectorAll(".flow .blk").forEach(g => {
     if (flame) for (var i = 0; i < flameEls.length; i++) flameEls[i].setAttribute('transform', 'translate(0,10) scale(1,' + R(0.75, 1.3).toFixed(2) + ') translate(0,-10)');
 
     // details: visor flare + sweeping scan light, drill spin, vent steam
-    E.flare.setAttribute('stroke', laser && !laser.fired ? '#b05cff' : C.teal);
-    E.flare.setAttribute('opacity', laser && !laser.fired ? (0.4 + 0.6 * Math.min(1, laser.t / LASER_CHARGE) * R(0.7, 1)).toFixed(2) : flareT < 0.8 ? (0.9 * (1 - flareT / 0.8)).toFixed(2) : 0);
+    E.flare.setAttribute('stroke', laser ? '#b05cff' : C.teal);   // [adapted] the whole visor stays lit purple while it charges and fires
+    E.flare.setAttribute('opacity', laser ? (0.4 + 0.6 * Math.min(1, laser.t / LASER_CHARGE) * R(0.7, 1)).toFixed(2) : flareT < 0.8 ? (0.9 * (1 - flareT / 0.8)).toFixed(2) : 0);
     E.scan.setAttribute('x', f2(60 + ((t * 75) % 260)));
     E.status.setAttribute('opacity', Math.sin(t * 4) > 0 ? 1 : 0.25);
     var spin = drillOn;
